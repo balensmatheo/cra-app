@@ -1,3 +1,5 @@
+import { FC, useMemo, useCallback, useRef, useEffect } from "react";
+import { FixedSizeList as List } from 'react-window';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
@@ -7,18 +9,16 @@ import TableRow from '@mui/material/TableRow';
 import Typography from '@mui/material/Typography';
 import AddIcon from '@mui/icons-material/Add';
 import IconButton from '@mui/material/IconButton';
-import { useRef, useMemo, useCallback, useEffect } from "react";
 import Divider from '@mui/material/Divider';
 import Box from '@mui/material/Box';
 import Tooltip from '@mui/material/Tooltip';
 import { type SectionKey } from '../constants/categories';
-import { VIRTUALIZATION_THRESHOLD } from '../constants/ui';
+import { VIRTUALIZATION_THRESHOLD, ROW_HEIGHT } from '../constants/ui';
 import ActivityRow from './ActivityRow';
-import VirtualizedActivityTable from './VirtualizedActivityTable';
 
 type Category = { id: number; label: string };
 
-type ActivityTableProps = {
+type VirtualizedActivityTableProps = {
   sectionKey: SectionKey;
   label: string;
   days: Date[];
@@ -38,7 +38,7 @@ type ActivityTableProps = {
 
 
 
-export default function ActivityTable({
+const VirtualizedActivityTable: FC<VirtualizedActivityTableProps> = ({
   sectionKey,
   label,
   days,
@@ -54,34 +54,9 @@ export default function ActivityTable({
   onCommentChange,
   tableRef,
   onTableScroll,
-}: ActivityTableProps) {
-  // Décider si on utilise la virtualisation (plus de 30 lignes)
-  const shouldVirtualize = categories.length > VIRTUALIZATION_THRESHOLD;
-
-  // Si on doit virtualiser, utiliser le composant virtualisé
-  if (shouldVirtualize) {
-    return (
-      <VirtualizedActivityTable
-        sectionKey={sectionKey}
-        label={label}
-        days={days}
-        categories={categories}
-        data={data}
-        categoryOptions={categoryOptions}
-        onCategoryChange={onCategoryChange}
-        onCellChange={onCellChange}
-        onAddCategory={onAddCategory}
-        onDeleteCategory={onDeleteCategory}
-        getRowTotal={getRowTotal}
-        getSectionTotal={getSectionTotal}
-        onCommentChange={onCommentChange}
-        tableRef={tableRef}
-        onTableScroll={onTableScroll}
-      />
-    );
-  }
-
+}) => {
   const localTableRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<List>(null);
 
   // Memoize les handlers pour éviter les re-rendus
   const handleCategoryChange = useCallback((catId: number, value: string) => {
@@ -123,25 +98,30 @@ export default function ActivityTable({
       </TableCell>
     )), [days]);
 
-  // Memoize les lignes de données
-  const tableRows = useMemo(() => 
-    categories.map((cat, index) => (
-      <ActivityRow
-        key={`${sectionKey}-${cat.id}`}
-        sectionKey={sectionKey}
-        category={cat}
-        index={index}
-        days={days}
-        data={data}
-        categoryOptions={categoryOptions}
-        onCategoryChange={handleCategoryChange}
-        onCellChange={handleCellChange}
-        onCommentChange={handleCommentChange}
-        onDeleteCategory={handleDeleteCategory}
-        getRowTotal={getRowTotal}
-        categoriesLength={categories.length}
-      />
-    )), [sectionKey, categories, days, data, categoryOptions, handleCategoryChange, handleCellChange, handleCommentChange, handleDeleteCategory, getRowTotal]);
+  // Fonction de rendu pour react-window
+  const Row = useCallback(({ index, style }: { index: number; style: React.CSSProperties }) => {
+    const category = categories[index];
+    if (!category) return null;
+
+    return (
+      <div style={style}>
+        <ActivityRow
+          sectionKey={sectionKey}
+          category={category}
+          index={index}
+          days={days}
+          data={data}
+          categoryOptions={categoryOptions}
+          onCategoryChange={handleCategoryChange}
+          onCellChange={handleCellChange}
+          onCommentChange={handleCommentChange}
+          onDeleteCategory={handleDeleteCategory}
+          getRowTotal={getRowTotal}
+          categoriesLength={categories.length}
+        />
+      </div>
+    );
+  }, [sectionKey, categories, days, data, categoryOptions, handleCategoryChange, handleCellChange, handleCommentChange, handleDeleteCategory, getRowTotal]);
 
   // Appeler la fonction de ref pour enregistrer la référence
   useEffect(() => {
@@ -157,6 +137,9 @@ export default function ActivityTable({
       tableRef(el);
     }
   }, [tableRef]);
+
+  // Décider si on utilise la virtualisation
+  const shouldVirtualize = categories.length > VIRTUALIZATION_THRESHOLD;
 
   return (
     <div style={{ marginBottom: 6, position: 'relative', paddingBottom: 10 }}>
@@ -285,7 +268,40 @@ export default function ActivityTable({
             </TableRow>
           </TableHead>
           <TableBody>
-            {tableRows}
+            {shouldVirtualize ? (
+              <TableRow>
+                <TableCell colSpan={days.length + 4} sx={{ padding: 0, border: 'none' }}>
+                  <List
+                    ref={listRef}
+                    height={Math.min(categories.length * ROW_HEIGHT, 400)}
+                    itemCount={categories.length}
+                    itemSize={ROW_HEIGHT}
+                    width="100%"
+                  >
+                    {Row}
+                  </List>
+                </TableCell>
+              </TableRow>
+            ) : (
+              // Rendu normal pour moins de 30 lignes
+              categories.map((cat, index) => (
+                <ActivityRow
+                  key={`${sectionKey}-${cat.id}`}
+                  sectionKey={sectionKey}
+                  category={cat}
+                  index={index}
+                  days={days}
+                  data={data}
+                  categoryOptions={categoryOptions}
+                  onCategoryChange={handleCategoryChange}
+                  onCellChange={handleCellChange}
+                  onCommentChange={handleCommentChange}
+                  onDeleteCategory={handleDeleteCategory}
+                  getRowTotal={getRowTotal}
+                  categoriesLength={categories.length}
+                />
+              ))
+            )}
             <TableRow>
               <TableCell sx={{ 
                 border: 'none', 
@@ -349,4 +365,6 @@ export default function ActivityTable({
       <Divider sx={{ mt: 2, borderColor: '#e9ecef' }} />
     </div>
   );
-} 
+};
+
+export default VirtualizedActivityTable; 

@@ -1,0 +1,1 @@
+export type SectionKey = "facturees" | "non_facturees" | "autres"; 

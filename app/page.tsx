@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { Box, TextField, Button, Typography, useTheme, IconButton } from "@mui/material";
+import { Box, TextField, Button, Typography, useTheme, IconButton, Snackbar, Alert } from "@mui/material";
 import SaveIcon from '@mui/icons-material/Save';
 import DescriptionIcon from '@mui/icons-material/Description';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -9,176 +9,60 @@ import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
+
 import Navbar from "../components/Navbar";
 import ActivityTable from "../components/ActivityTable";
 import { exportExcel } from "../utils/exportExcel";
-
-const SECTION_LABELS = [
-  { key: "facturees", label: "Activités Facturées" },
-  { key: "non_facturees", label: "Activités Non Facturées" },
-  { key: "autres", label: "Autres" },
-];
-
-const getDaysInMonth = (year: number, month: number) => {
-  const date = new Date(year, month, 1);
-  const days = [];
-  while (date.getMonth() === month) {
-    days.push(new Date(date));
-    date.setDate(date.getDate() + 1);
-  }
-  return days;
-};
-
-type SectionKey = "facturees" | "non_facturees" | "autres";
-
-// Ajout des options de catégories par section
-const CATEGORY_OPTIONS: { [key in SectionKey]: string[] } = {
-  facturees: [
-    "Prestation de formation",
-    "Prestation régie / expertise"
-  ],
-  non_facturees: [
-    "Ecole",
-    "Auto-formation",
-    "Formation interne",
-    "Inter-contrat",
-    "Journée séminaire, sortie",
-    "Projet client",
-    "Projet interne"
-  ],
-  autres: [
-    "Absence autorisée",
-    "Congé",
-    "Maladie / Arrêt",
-    "RTT"
-  ]
-};
+import { useDebounce } from "../hooks/useDebounce";
+import { useCRAEngine } from "../hooks/useCRAEngine";
+import { useCRAState, type Category, type CategoriesState, type DataState } from "../hooks/useCRAState";
+import { type SectionKey } from "../constants/categories";
+import { CATEGORY_OPTIONS, SECTION_LABELS, NAME_DEBOUNCE_DELAY } from "../constants/ui";
+import { isFutureMonth, isDuplicateCategory } from "../constants/validation";
 
 export default function Home() {
   const today = new Date();
-  const [name, setName] = useState("");
+    const [name, setName] = useState("");
   const [localName, setLocalName] = useState("");
+  const debouncedLocalName = useDebounce(localName, NAME_DEBOUNCE_DELAY);
   const [month, setMonth] = useState(
     `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`
   );
-  const nameTimeoutRef = useRef<NodeJS.Timeout | undefined>(undefined);
   
-  type Category = { id: number; label: string };
-  type CategoriesState = { [key in SectionKey]: Category[] };
-  type DataState = { [key in SectionKey]: { [catId: number]: { [date: string]: string } } };
-
-  const [categories, setCategories] = useState<CategoriesState>({
-    facturees: [{ id: 1, label: "" }],
-    non_facturees: [{ id: 1, label: "" }],
-    autres: [{ id: 1, label: "" }],
-  });
-  const [data, setData] = useState<DataState>({
-    facturees: {},
-    non_facturees: {},
-    autres: {},
-  });
+  const {
+    categories,
+    data,
+    updateCell,
+    updateComment,
+    updateCategory,
+    addCategory,
+    deleteCategory,
+    loadState,
+  } = useCRAState();
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
+    open: false,
+    message: '',
+    severity: 'success'
+  });
   const theme = useTheme();
-
-  // Synchroniser le nom local avec le nom externe
-  useEffect(() => {
-    setLocalName(name);
-  }, [name]);
-
-  // Nettoyer le timeout lors du démontage
-  useEffect(() => {
-    return () => {
-      if (nameTimeoutRef.current) {
-        clearTimeout(nameTimeoutRef.current);
-      }
-    };
-  }, []);
 
   // Générer les jours du mois sélectionné
   const [year, m] = month.split("-").map(Number);
-  const days = useMemo(() => getDaysInMonth(year, m - 1), [year, m]);
-
-  // Charger depuis localStorage
-  useEffect(() => {
-    const key = `cra_sections_${name}_${month}`;
-    const savedData = localStorage.getItem(key);
-    if (savedData) {
-      const parsed = JSON.parse(savedData);
-      setCategories(parsed.categories);
-      setData(parsed.data);
-      setSaved(true);
-    } else {
-      setCategories({
-        facturees: [{ id: 1, label: "" }],
-        non_facturees: [{ id: 1, label: "" }],
-        autres: [{ id: 1, label: "" }],
-      });
-      setData({ facturees: {}, non_facturees: {}, autres: {} });
-      setSaved(false);
+  const days = useMemo(() => {
+    const date = new Date(year, m - 1, 1);
+    const days = [];
+    while (date.getMonth() === m - 1) {
+      days.push(new Date(date));
+      date.setDate(date.getDate() + 1);
     }
-    // eslint-disable-next-line
-  }, [name, month]);
+    return days;
+  }, [year, m]);
 
-  // Gestion des changements de saisie
-  const handleCellChange = useCallback((section: SectionKey, catId: number, date: string, value: string) => {
-    setData((prev) => ({
-      ...prev,
-      [section]: {
-        ...prev[section],
-        [catId]: { ...prev[section][catId], [date]: value },
-      },
-    }));
-    setSaved(false);
-  }, []);
-
-  // Gestion des changements de commentaire
-  const handleCommentChange = useCallback((section: SectionKey, catId: number, value: string) => {
-    setData((prev) => ({
-      ...prev,
-      [section]: {
-        ...prev[section],
-        [catId]: {
-          ...prev[section][catId],
-          comment: value,
-        },
-      },
-    }));
-    setSaved(false);
-  }, []);
-
-  // Ajouter une catégorie
-  const handleAddCategory = useCallback((section: SectionKey) => {
-    setCategories((prev) => {
-      const newId = prev[section].length > 0 ? Math.max(...prev[section].map(c => c.id)) + 1 : 1;
-      return {
-        ...prev,
-        [section]: [...prev[section], { id: newId, label: "" }],
-      };
-    });
-  }, []);
-
-  // Supprimer une catégorie
-  const handleDeleteCategory = useCallback((section: SectionKey, catId: number) => {
-    setCategories((prev) => ({
-      ...prev,
-      [section]: prev[section].filter(c => c.id !== catId),
-    }));
-    setData((prev) => {
-      const copy = { ...prev };
-      delete copy[section][catId];
-      return copy;
-    });
-    setSaved(false);
-  }, []);
-
-  // Changer le nom d'une catégorie
-  const handleCategoryLabelChange = useCallback((section: SectionKey, catId: number, value: string) => {
-    setCategories((prev) => ({
-      ...prev,
-      [section]: prev[section].map(c => c.id === catId ? { ...c, label: value } : c),
-    }));
-    setSaved(false);
-  }, []);
+  // Utiliser le hook CRA Engine
+  const craEngine = useCRAEngine(categories, data, days);
+  const { getRowTotal, getSectionTotal, getTotalWorkedDays, getBusinessDaysInMonth, canDeleteLastCategory } = craEngine;
 
   // Validation : une ligne avec données ne doit pas avoir une catégorie vide
   const hasInvalidCategory = useMemo(() => 
@@ -189,14 +73,112 @@ export default function Home() {
         return hasData && !cat.label;
       })
     ), [categories, data]);
-  
-  const [error, setError] = useState("");
 
-  // Sauvegarder dans localStorage
+  // Synchroniser le nom local avec le nom externe
+  useEffect(() => {
+    setLocalName(name);
+  }, [name]);
+
+  // Utiliser le nom debouncé pour mettre à jour le nom externe
+  useEffect(() => {
+    if (debouncedLocalName !== name) {
+      setName(debouncedLocalName);
+    }
+  }, [debouncedLocalName, name]);
+
+  // Charger depuis localStorage
+  useEffect(() => {
+    const key = `cra_sections_${name}_${month}`;
+    const savedData = localStorage.getItem(key);
+    if (savedData) {
+      const parsed = JSON.parse(savedData);
+      loadState(parsed);
+      setSaved(true);
+    } else {
+      loadState({
+        categories: {
+          facturees: [{ id: 1, label: "" }],
+          non_facturees: [{ id: 1, label: "" }],
+          autres: [{ id: 1, label: "" }],
+        },
+        data: { facturees: {}, non_facturees: {}, autres: {} },
+      });
+      setSaved(false);
+    }
+    // eslint-disable-next-line
+  }, [name, month, loadState]);
+
+  // Gestion des changements de saisie - optimisée pour éviter la recréation entière
+  const handleCellChange = useCallback((section: SectionKey, catId: number, date: string, value: string) => {
+    updateCell(section, catId, date, value);
+    setSaved(false);
+  }, [updateCell]);
+
+  // Gestion des changements de catégorie
+  const handleCategoryLabelChange = useCallback((section: SectionKey, catId: number, value: string) => {
+    updateCategory(section, catId, value);
+    setSaved(false);
+  }, [updateCategory]);
+
+  // Gestion des changements de commentaire - optimisée pour éviter la recréation entière
+  const handleCommentChange = useCallback((section: SectionKey, catId: number, value: string) => {
+    updateComment(section, catId, value);
+    setSaved(false);
+  }, [updateComment]);
+
+  // Ajouter une catégorie
+  const handleAddCategory = useCallback((section: SectionKey) => {
+    addCategory(section);
+    setSaved(false);
+  }, [addCategory]);
+
+  // Supprimer une catégorie avec validation
+  const handleDeleteCategory = useCallback((section: SectionKey, catId: number) => {
+    if (!canDeleteLastCategory(section)) {
+      setSnackbar({
+        open: true,
+        message: 'Impossible de supprimer la dernière ligne non vide',
+        severity: 'error'
+      });
+      return;
+    }
+
+    deleteCategory(section, catId);
+    setSaved(false);
+  }, [deleteCategory, canDeleteLastCategory]);
+
+
+
+  // Validation du mois
+  const handleMonthChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const newMonth = e.target.value;
+    if (isFutureMonth(newMonth)) {
+      setSnackbar({
+        open: true,
+        message: 'Impossible de sélectionner un mois futur',
+        severity: 'error'
+      });
+      return;
+    }
+    setMonth(newMonth);
+  }, []);
+
+  // Sauvegarder dans localStorage avec feedback
   const handleSave = useCallback(() => {
-    if (!name) return alert("Merci de renseigner votre nom.");
+    if (!name) {
+      setSnackbar({
+        open: true,
+        message: 'Merci de renseigner votre nom.',
+        severity: 'error'
+      });
+      return;
+    }
     if (hasInvalidCategory) {
-      setError("Une catégorie ne peut pas être vide si la ligne contient des données.");
+      setSnackbar({
+        open: true,
+        message: "Une catégorie ne peut pas être vide si la ligne contient des données.",
+        severity: 'error'
+      });
       return;
     }
     setError("");
@@ -205,47 +187,44 @@ export default function Home() {
       JSON.stringify({ categories, data })
     );
     setSaved(true);
+    setSnackbar({
+      open: true,
+      message: 'Compte rendu sauvegardé !',
+      severity: 'success'
+    });
   }, [name, hasInvalidCategory, categories, data, month]);
 
-  // Optimiser les calculs de totaux avec une meilleure mémorisation
-  const rowTotals = useMemo(() => {
-    const totals: { [section in SectionKey]: { [catId: number]: number } } = {
-      facturees: {},
-      non_facturees: {},
-      autres: {}
-    };
-    
-    Object.entries(categories).forEach(([section, cats]) => {
-      cats.forEach(cat => {
-        const row = data[section as SectionKey][cat.id] || {};
-        totals[section as SectionKey][cat.id] = days.reduce((sum, d) => 
-          sum + (parseFloat(row[d.toISOString().slice(0, 10)]) || 0), 0
-        );
+  const handleExport = useCallback(() => {
+    if (hasInvalidCategory) {
+      setSnackbar({
+        open: true,
+        message: "Une catégorie ne peut pas être vide si la ligne contient des données.",
+        severity: 'error'
       });
+      return;
+    }
+    setError("");
+    exportExcel({
+      name,
+      month,
+      days,
+      categories,
+      data
     });
-    
-    return totals;
-  }, [categories, data, days]);
+    setSnackbar({
+      open: true,
+      message: 'Export Excel généré avec succès !',
+      severity: 'success'
+    });
+  }, [hasInvalidCategory, name, month, days, categories, data]);
 
-  // Calcul du total pour une ligne (catégorie) - optimisé
-  const getRowTotal = useCallback((section: SectionKey, catId: number) => {
-    return rowTotals[section][catId] || 0;
-  }, [rowTotals]);
+  // Optimiser les handlers des champs de texte avec debounce
+  const handleNameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setLocalName(e.target.value);
+  }, []);
 
-  // Calcul du total pour une section - optimisé
-  const getSectionTotal = useCallback((section: SectionKey) => {
-    return Object.values(rowTotals[section]).reduce((sum, total) => sum + total, 0);
-  }, [rowTotals]);
-
-  // Calcul du total de jours facturés (hors week-ends) - optimisé
-  const getTotalWorkedDays = useCallback(() => {
-    return Object.values(rowTotals.facturees).reduce((sum, total) => sum + total, 0);
-  }, [rowTotals.facturees]);
-
-  // Calcul du nombre de jours ouvrés dans le mois
-  const getBusinessDaysInMonth = useCallback(() => {
-    return days.filter(d => d.getDay() !== 0 && d.getDay() !== 6).length;
-  }, [days]);
+  const totalDays = getTotalWorkedDays();
+  const businessDaysInMonth = getBusinessDaysInMonth();
 
   // Synchronisation du scroll horizontal des tableaux
   const tableRefs: Record<SectionKey, React.RefObject<HTMLDivElement | null>> = {
@@ -253,6 +232,7 @@ export default function Home() {
     non_facturees: useRef<HTMLDivElement>(null),
     autres: useRef<HTMLDivElement>(null),
   };
+  
   const handleSyncScroll = useCallback((sectionKey: SectionKey) => (e: React.UIEvent<HTMLDivElement>) => {
     const scrollLeft = e.currentTarget.scrollLeft;
     Object.entries(tableRefs).forEach(([key, ref]) => {
@@ -261,9 +241,6 @@ export default function Home() {
       }
     });
   }, [tableRefs]);
-
-  const totalDays = useMemo(() => getTotalWorkedDays(), [getTotalWorkedDays]);
-  const businessDaysInMonth = useMemo(() => getBusinessDaysInMonth(), [getBusinessDaysInMonth]);
 
   // Contrôle de zoom global
   const [globalZoom, setGlobalZoom] = useState(1);
@@ -307,7 +284,10 @@ export default function Home() {
         data: data[sectionKey],
         categoryOptions: CATEGORY_OPTIONS[sectionKey],
         tableRef: (el: HTMLDivElement | null) => {
+          // Enregistrer pour le zoom global
           allTableRefs.current[index] = el;
+          // Enregistrer pour la synchronisation du scroll
+          tableRefs[sectionKey].current = el;
           if (el) {
             el.style.zoom = globalZoom.toString();
           }
@@ -315,42 +295,7 @@ export default function Home() {
         onTableScroll: handleSyncScroll(sectionKey),
         ...handlers
       };
-    }), [SECTION_LABELS, days, categories, data, createSectionHandlers, handleSyncScroll, globalZoom]);
-
-  const handleExport = useCallback(() => {
-    if (hasInvalidCategory) {
-      setError("Une catégorie ne peut pas être vide si la ligne contient des données.");
-      return;
-    }
-    setError("");
-    exportExcel({
-      name,
-      month,
-      days,
-      categories,
-      data
-    });
-  }, [hasInvalidCategory, name, month, days, categories, data]);
-
-  // Optimiser les handlers des champs de texte avec debounce
-  const handleNameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const newValue = e.target.value;
-    setLocalName(newValue);
-    
-    // Annuler le timeout précédent
-    if (nameTimeoutRef.current) {
-      clearTimeout(nameTimeoutRef.current);
-    }
-    
-    // Déclencher la mise à jour externe après 200ms d'inactivité
-    nameTimeoutRef.current = setTimeout(() => {
-      setName(newValue);
-    }, 200);
-  }, []);
-
-  const handleMonthChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setMonth(e.target.value);
-  }, []);
+    }), [SECTION_LABELS, days, categories, data, createSectionHandlers, globalZoom, tableRefs, handleSyncScroll]);
 
   return (
     <Box sx={{ 
@@ -453,45 +398,40 @@ export default function Home() {
                   Reset
                 </Button>
               </Box>
+              
+
+              
               <Button
                 variant="contained"
                 startIcon={<SaveIcon fontSize="small" />}
                 onClick={handleSave}
                 size="small"
                 sx={{
-                  fontWeight: 500,
-                  fontSize: 15,
-                  px: 2.5,
+                  fontSize: 14,
+                  px: 2,
                   py: 0.5,
-                  borderRadius: 2,
-                  minWidth: 0,
-                  background: "#894991",
-                  boxShadow: "none",
+                  backgroundColor: "#894991",
                   textTransform: 'none',
-                  '&:hover': { background: '#a05fa7' }
+                  '&:hover': { backgroundColor: '#6a3a7a' }
                 }}
               >
-                Enregistrer
+                Sauvegarder
               </Button>
+              
               <Button
                 variant="outlined"
-                startIcon={<DescriptionIcon fontSize="small" sx={{ color: '#21a366' }} />}
+                startIcon={<DescriptionIcon fontSize="small" />}
                 onClick={handleExport}
                 size="small"
                 sx={{
-                  fontWeight: 500,
-                  fontSize: 15,
-                  px: 2.5,
+                  fontSize: 14,
+                  px: 2,
                   py: 0.5,
-                  borderRadius: 2,
-                  minWidth: 0,
-                  color: "#894991",
-                  borderColor: "#894991",
+                  borderColor: '#4caf50',
+                  color: '#4caf50',
                   textTransform: 'none',
-                  boxShadow: "none",
-                  '&:hover': { borderColor: '#a05fa7', color: '#a05fa7' }
+                  '&:hover': { borderColor: '#388e3c', color: '#388e3c' }
                 }}
-                disabled={hasInvalidCategory}
               >
                 Exporter
               </Button>
@@ -590,16 +530,134 @@ export default function Home() {
         
         {!isFullscreen && (
           <>
-            <Box sx={{ width: '100%', maxWidth: 1700, mx: 'auto', mt: 4, mb: 2, display: 'flex', justifyContent: 'flex-end' }}>
-              <Typography sx={{ fontWeight: 600, color: '#666', fontSize: '0.9rem' }}>
-                Total jours facturés : {totalDays.toFixed(2)} / {businessDaysInMonth} jours ouvrés
-              </Typography>
+            <Box sx={{ 
+              width: '100%', 
+              maxWidth: 1700, 
+              mx: 'auto', 
+              mt: 4, 
+              mb: 2, 
+              display: 'flex', 
+              justifyContent: 'flex-end',
+              alignItems: 'center',
+              gap: 2
+            }}>
+              <Box sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                backgroundColor: '#f8f9fa',
+                padding: '12px 16px',
+                borderRadius: '8px',
+                border: '1px solid #e9ecef',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+                minWidth: 'fit-content'
+              }}>
+                <Box sx={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  minWidth: '60px'
+                }}>
+                  <Typography sx={{ 
+                    fontSize: '0.75rem', 
+                    color: '#6c757d', 
+                    fontWeight: 500,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    Facturés
+                  </Typography>
+                  <Typography sx={{ 
+                    fontSize: '1.5rem', 
+                    color: '#894991', 
+                    fontWeight: 700,
+                    lineHeight: 1
+                  }}>
+                    {totalDays.toFixed(2)}
+                  </Typography>
+                </Box>
+                <Box sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  color: '#6c757d',
+                  fontSize: '1.2rem',
+                  fontWeight: 300
+                }}>
+                  /
+                </Box>
+                <Box sx={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  minWidth: '60px'
+                }}>
+                  <Typography sx={{ 
+                    fontSize: '0.75rem', 
+                    color: '#6c757d', 
+                    fontWeight: 500,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    Ouverts
+                  </Typography>
+                  <Typography sx={{ 
+                    fontSize: '1.5rem', 
+                    color: '#495057', 
+                    fontWeight: 700,
+                    lineHeight: 1
+                  }}>
+                    {businessDaysInMonth}
+                  </Typography>
+                </Box>
+                <Box sx={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  marginLeft: '12px',
+                  paddingLeft: '12px',
+                  borderLeft: '1px solid #dee2e6'
+                }}>
+                  <Typography sx={{ 
+                    fontSize: '0.75rem', 
+                    color: '#6c757d', 
+                    fontWeight: 500,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px'
+                  }}>
+                    Taux
+                  </Typography>
+                  <Typography sx={{ 
+                    fontSize: '1.2rem', 
+                    color: totalDays / businessDaysInMonth >= 0.8 ? '#28a745' : totalDays / businessDaysInMonth >= 0.6 ? '#ffc107' : '#dc3545',
+                    fontWeight: 700,
+                    lineHeight: 1
+                  }}>
+                    {((totalDays / businessDaysInMonth) * 100).toFixed(1)}%
+                  </Typography>
+                </Box>
+              </Box>
             </Box>
             {saved && <Typography sx={{ color: "green", ml: 3, fontWeight: 500 }}>Compte rendu sauvegardé !</Typography>}
             {error && <Typography sx={{ color: "red", mt: 2, fontWeight: 500 }}>{error}</Typography>}
           </>
         )}
       </Box>
+
+      {/* Snackbar pour les feedbacks */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert 
+          onClose={() => setSnackbar(prev => ({ ...prev, open: false }))} 
+          severity={snackbar.severity}
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }
