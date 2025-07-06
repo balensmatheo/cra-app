@@ -1,4 +1,4 @@
-# CRA App - Gestion des Compte Rendus d'Activité
+# CRA App - Gestion des Comptes Rendus d'Activité
 
 ## 📋 Contexte
 
