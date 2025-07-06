@@ -94,7 +94,7 @@ const CommentCell: FC<{
   onCommentChange: (catId: number, value: string) => void;
 }> = memo(({ value, record, onCommentChange }) => {
   const [localValue, setLocalValue] = useState(value);
-  const timeoutRef = useRef<NodeJS.Timeout>();
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Synchroniser la valeur locale avec la valeur externe
   useEffect(() => {
@@ -148,11 +148,11 @@ const DayCell: FC<{
   const isValid = useMemo(() => value === "" || allowedDayValues.includes(value), [value]);
   const dayString = useMemo(() => day.toISOString().slice(0, 10), [day]);
   
-  const handleChange = useCallback((_, newValue: string | null) => {
+  const handleChange = useCallback((_: any, newValue: string | null) => {
     onCellChange(record.id, dayString, newValue || "");
   }, [record.id, dayString, onCellChange]);
   
-  const handleInputChange = useCallback((_, newInputValue: string) => {
+  const handleInputChange = useCallback((_: any, newInputValue: string) => {
     // Ne déclencher que si la valeur est valide ou vide
     if (newInputValue === "" || allowedDayValues.includes(newInputValue)) {
       onCellChange(record.id, dayString, newInputValue);
