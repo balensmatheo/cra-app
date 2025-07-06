@@ -77,7 +77,13 @@ export async function exportExcel({ name, month, days, categories, data }: Expor
               // Marquer visuellement le week-end (ex: 'X' ou vide)
               val = ""; // ou 'X' si vous préférez
             }
-            ws[XLSX.utils.encode_cell({ c: C + 2 + dayIdx, r: row + idx })] = { t: 's', v: val };
+            const cellRef = XLSX.utils.encode_cell({ c: C + 2 + dayIdx, r: row + idx });
+            if (val !== "") {
+              const num = parseFloat(val);
+              if (!isNaN(num)) {
+                ws[cellRef] = { t: 'n', v: num };
+              }
+            }
           });
         });
       }
