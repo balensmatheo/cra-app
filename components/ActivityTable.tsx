@@ -300,6 +300,7 @@ export default function ActivityTable({
     const dayCols: GridColDef[] = days.map((d) => ({
       field: d.toISOString().slice(0, 10),
       width: 80,
+      type: 'number',
       headerAlign: 'center',
       align: 'center',
       renderHeader: () => (
@@ -355,6 +356,7 @@ export default function ActivityTable({
         field: 'label',
         headerName: 'Catégorie',
         width: 220,
+        type: 'string',
         renderHeader: () => (
           <Box sx={{ 
             textAlign: 'center',
@@ -392,6 +394,7 @@ export default function ActivityTable({
         field: 'comment',
         headerName: 'Détails / Commentaires',
         width: 280,
+        type: 'string',
         renderHeader: () => (
           <Box sx={{ 
             textAlign: 'center',
@@ -431,6 +434,7 @@ export default function ActivityTable({
         width: 90,
         headerAlign: 'center',
         align: 'center',
+        type: 'number',
         renderHeader: () => (
           <Box sx={{ 
             textAlign: 'center',
@@ -614,7 +618,9 @@ export default function ActivityTable({
           hideFooter
           disableColumnMenu
           disableRowSelectionOnClick
-          sx={{ 
+          getRowHeight={() => 'auto'}
+          getEstimatedRowHeight={() => 200}
+          sx={{
             minWidth: `${220 + 280 + days.length * 80 + 90 + 70}px`,
             '& .MuiDataGrid-cell:focus': {
               outline: 'none'
