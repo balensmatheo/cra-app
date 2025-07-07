@@ -8,6 +8,7 @@ export const CATEGORY_OPTIONS: Record<SectionKey, string[]> = {
   ],
   non_facturees: [
     "Auto-formation",
+    "Ecole",
     "Formation interne",
     "Inter-contrat",
     "Journée séminaire, sortie",

@@ -9,6 +9,7 @@ import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
+import RefreshIcon from '@mui/icons-material/Refresh';
 
 import Navbar from "../components/Navbar";
 import ActivityTable from "../components/ActivityTable";
@@ -88,6 +89,11 @@ export default function Home() {
 
   // Charger depuis localStorage
   useEffect(() => {
+    // Ne charger que si le nom n'est pas vide
+    if (!name.trim()) {
+      return;
+    }
+    
     const key = `cra_sections_${name}_${month}`;
     const savedData = localStorage.getItem(key);
     if (savedData) {
@@ -193,6 +199,34 @@ export default function Home() {
       severity: 'success'
     });
   }, [name, hasInvalidCategory, categories, data, month]);
+
+  // Réinitialiser les données
+  const handleReset = useCallback(() => {
+    if (!name) {
+      setSnackbar({
+        open: true,
+        message: 'Merci de renseigner votre nom.',
+        severity: 'error'
+      });
+      return;
+    }
+    
+    // Réinitialiser à l'état initial
+    loadState({
+      categories: {
+        facturees: [{ id: 1, label: "" }],
+        non_facturees: [{ id: 1, label: "" }],
+        autres: [{ id: 1, label: "" }],
+      },
+      data: { facturees: {}, non_facturees: {}, autres: {} },
+    });
+    setSaved(false);
+    setSnackbar({
+      open: true,
+      message: 'Données réinitialisées !',
+      severity: 'success'
+    });
+  }, [name, loadState]);
 
   const handleExport = useCallback(() => {
     if (hasInvalidCategory) {
@@ -402,6 +436,24 @@ export default function Home() {
 
               
               <Button
+                variant="outlined"
+                startIcon={<RefreshIcon fontSize="small" />}
+                onClick={handleReset}
+                size="small"
+                sx={{
+                  fontSize: 14,
+                  px: 2,
+                  py: 0.5,
+                  borderColor: '#ff9800',
+                  color: '#ff9800',
+                  textTransform: 'none',
+                  '&:hover': { borderColor: '#f57c00', color: '#f57c00' }
+                }}
+              >
+                Réinitialiser
+              </Button>
+              
+              <Button
                 variant="contained"
                 startIcon={<SaveIcon fontSize="small" />}
                 onClick={handleSave}
@@ -598,7 +650,7 @@ export default function Home() {
                     textTransform: 'uppercase',
                     letterSpacing: '0.5px'
                   }}>
-                    Ouverts
+                    Jours Ouvrés
                   </Typography>
                   <Typography sx={{ 
                     fontSize: '1.5rem', 
