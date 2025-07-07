@@ -16,6 +16,7 @@
     "@mui/x-date-pickers": "^8.7.0",
     "@tanstack/react-table": "^8.21.3",
     "@types/react-window": "^1.8.8",
+    "aws-amplify": "^6.15.3",
     "date-fns": "^4.1.0",
     "next": "15.3.5",
     "react": "^18.3.0",
@@ -24,9 +25,15 @@
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@aws-amplify/backend": "^1.16.1",
+    "@aws-amplify/backend-cli": "^1.8.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "typescript": "^5"
+    "aws-cdk-lib": "^2.189.1",
+    "constructs": "^10.4.2",
+    "esbuild": "^0.25.5",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
   }
 }

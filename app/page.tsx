@@ -158,14 +158,6 @@ export default function Home() {
   // Validation du mois
   const handleMonthChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const newMonth = e.target.value;
-    if (isFutureMonth(newMonth)) {
-      setSnackbar({
-        open: true,
-        message: 'Impossible de sélectionner un mois futur',
-        severity: 'error'
-      });
-      return;
-    }
     setMonth(newMonth);
   }, []);
 
