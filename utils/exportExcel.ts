@@ -26,53 +26,48 @@ export async function exportExcel({
   data,
 }: ExportExcelParams) {
   const response = await fetch("/cra_template.xlsx");
-  const arrayBuffer = await response.arrayBuffer();
+  if (!response.ok)
+    throw new Error("Erreur lors du chargement du modèle Excel.");
 
+  const arrayBuffer = await response.arrayBuffer();
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(arrayBuffer);
+  workbook.calcProperties.fullCalcOnLoad = false;
 
   const worksheet = workbook.getWorksheet("data");
+  const noticeSheet = workbook.getWorksheet("Notice");
 
-  if (!worksheet) {
-    throw new Error("Worksheet not found. Check the sheet name in your template.");
-  }
+  if (!worksheet) throw new Error("Worksheet 'data' introuvable.");
+  if (!noticeSheet) throw new Error("Worksheet 'Notice' introuvable.");
 
-  // 📌 Remplissage identité
-  worksheet.getCell("E2").value = name;
-  worksheet.getCell("U4").value = month;
+  // 👤 Nom & prénom
+  const nameParts = name.trim().split(" ");
+  const firstName = nameParts[0] || "";
+  const lastName = nameParts.slice(1).join(" ") || "";
 
-  // 🎨 Styles
-  const fillGray = {
-    type: "pattern" as const,
-    pattern: "solid" as const,
-    fgColor: { argb: "FFD9D9D9" },
+  noticeSheet.getCell("C3").value = lastName;
+  noticeSheet.getCell("C4").value = firstName;
+
+  // 📆 Mois/année
+  const [yearStr, monthStr] = month.split("-");
+  const year = parseInt(yearStr, 10);
+  const monthNum = parseInt(monthStr, 10);
+
+  // Injecte le mois sous forme de nombre dans B4
+  const b4 = worksheet.getCell("B4");
+  b4.value = monthNum || 1;
+  b4.numFmt = ";;;"; // invisible
+  b4.font = { color: { argb: "FFFFFFFF" } };  // Texte blanc
+  b4.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FFFFFFFF" }, // Fond blanc
   };
 
-  const fillWhite = {
-    type: "pattern" as const,
-    pattern: "solid" as const,
-    fgColor: { argb: "FFFFFFFF" },
-  };
+  // Injecte l’année dans Notice!C6
+  noticeSheet.getCell("C6").value = year;
 
-  // 🗓️ Ligne 8 (jours texte) et ligne 9 (numéros)
-  days.forEach((d, idx) => {
-    const col = 5 + idx;
-    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-
-    const dayCell = worksheet.getRow(8).getCell(col);
-    dayCell.value = d.toLocaleDateString("fr-FR", { weekday: "short" });
-    dayCell.fill = isWeekend ? fillGray : fillWhite;
-
-    const numCell = worksheet.getRow(9).getCell(col);
-    numCell.value = d.getDate();
-    numCell.numFmt = "0";
-    numCell.fill = isWeekend ? fillGray : fillWhite;
-  });
-
-  worksheet.getRow(8).commit();
-  worksheet.getRow(9).commit();
-
-  // 📊 Sections
+  // 📊 Données
   const sectionStartRows: Record<SectionKey, number> = {
     facturees: 11,
     non_facturees: 19,
@@ -85,46 +80,38 @@ export async function exportExcel({
     categories[key].forEach((cat, idx) => {
       const row = startRow + idx;
       const excelRow = worksheet.getRow(row);
+      const catData = data[key][cat.id] || {};
 
-      excelRow.getCell(2).value = cat.label;
-      excelRow.getCell(3).value = data[key][cat.id]?.comment || "";
+      excelRow.getCell(2).value = cat.label || "";
+      excelRow.getCell(3).value = catData.comment || "";
 
       days.forEach((d, dayIdx) => {
         const col = 5 + dayIdx;
+        if (col > 35) return;
+
         const cell = excelRow.getCell(col);
-        const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+        const dateStr = d.toISOString().slice(0, 10);
+        const rawValue = catData[dateStr] ?? "";
 
-        const rawValue = data[key][cat.id]?.[d.toISOString().slice(0, 10)] ?? "";
-        const value =
-          rawValue && !isNaN(Number(rawValue)) && rawValue.trim() !== ""
-            ? Number(rawValue)
-            : rawValue;
+        let value: string | number | null = null;
+        if (rawValue && rawValue.trim() !== "") {
+          const numValue = Number(rawValue);
+          if (!isNaN(numValue)) {
+            value = numValue;
+          } else {
+            value = rawValue.trim();
+          }
+        }
 
-        cell.value = value !== "" ? value : null;
-        cell.fill = isWeekend ? fillGray : fillWhite;
+        cell.value = value;
       });
 
       excelRow.commit();
     });
   });
 
-  // 🖌️ Forcer le fond même pour les cellules vides dans les colonnes week-end
-  days.forEach((d, dayIdx) => {
-    const col = 5 + dayIdx;
-    const isWeekend = d.getDay() === 0 || d.getDay() === 6;
-    const fill = isWeekend ? fillGray : fillWhite;
-
-    for (let row = 11; row <= 31; row++) {
-      const cell = worksheet.getRow(row).getCell(col);
-      cell.value ??= null;
-      cell.fill = fill;
-    }
-  });
-
-  // ❄️ Vue figée
   worksheet.views = [{ state: "frozen", xSplit: 4, ySplit: 8 }];
 
-  // 📤 Export
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
