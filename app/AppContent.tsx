@@ -272,9 +272,11 @@ export default function AppContent() {
       };
     }), [SECTION_LABELS, days, categories, data, createSectionHandlers, globalZoom, tableRefs, handleSyncScroll]);
   const [userEmail, setUserEmail] = useState<string>("");
+
   useEffect(() => {
     getCurrentUser().then(user => {
       setUserEmail(user?.signInDetails?.loginId || user?.username || "");
+      console.log(user)
     }).catch(() => setUserEmail(""));
   }, []);
 
