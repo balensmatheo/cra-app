@@ -12,7 +12,7 @@ import { useRouter } from 'next/navigation';
 import Image from "next/image";
 import CircularProgress from '@mui/material/CircularProgress';
 
-export default function SignIn({ children }: { children: ReactNode }) {
+export default function Signin({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [checkingUser, setCheckingUser] = useState(true);
