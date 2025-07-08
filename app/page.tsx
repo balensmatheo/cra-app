@@ -20,6 +20,11 @@ import { useCRAState, type Category, type CategoriesState, type DataState } from
 import { type SectionKey } from "../constants/categories";
 import { CATEGORY_OPTIONS, SECTION_LABELS, NAME_DEBOUNCE_DELAY } from "../constants/ui";
 import { isFutureMonth, isDuplicateCategory } from "../constants/validation";
+import { Amplify } from "aws-amplify"
+import '@aws-amplify/ui-react/styles.css';
+import outputs from "../amplify_outputs.json"
+import { Authenticator } from '@aws-amplify/ui-react';
+Amplify.configure(outputs)
 
 export default function Home() {
   const today = new Date();
@@ -324,384 +329,386 @@ export default function Home() {
     }), [SECTION_LABELS, days, categories, data, createSectionHandlers, globalZoom, tableRefs, handleSyncScroll]);
 
   return (
-    <Box sx={{ 
-      minHeight: "100vh", 
-      background: "#f5f5f5",
-      position: isFullscreen ? 'fixed' : 'relative',
-      top: isFullscreen ? 0 : 'auto',
-      left: isFullscreen ? 0 : 'auto',
-      right: isFullscreen ? 0 : 'auto',
-      bottom: isFullscreen ? 0 : 'auto',
-      zIndex: isFullscreen ? 9999 : 'auto',
-      overflow: isFullscreen ? 'auto' : 'visible'
-    }}>
-      {!isFullscreen && <Navbar />}
-      <Box
-        sx={{
-          width: isFullscreen ? "100%" : "95%",
-          maxWidth: isFullscreen ? "100%" : 1900,
-          margin: isFullscreen ? 0 : "40px auto 0 auto",
-          background: "#fff",
-          borderRadius: isFullscreen ? 0 : 2,
-          boxShadow: isFullscreen ? "none" : "0 4px 24px rgba(0,0,0,0.08)",
-          p: isFullscreen ? 2 : 4,
-          minHeight: isFullscreen ? "100vh" : 400,
-          position: 'relative'
-        }}
-      >
-        {!isFullscreen && (
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 4 }}>
-            <Box sx={{ display: 'flex', gap: 3, alignItems: 'center' }}>
-              <TextField
-                label="Nom / Prénom"
-                value={localName}
-                onChange={handleNameChange}
-                sx={{ minWidth: 200 }}
-                placeholder="Votre nom"
-                size="small"
-              />
-              <TextField
-                label="Mois"
-                type="month"
-                value={month}
-                onChange={handleMonthChange}
-                sx={{ minWidth: 140 }}
-                size="small"
-                InputLabelProps={{ shrink: true }}
-              />
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 2 }}>
-                <Typography variant="body2" sx={{ color: '#666', fontSize: '0.8rem' }}>
-                  Zoom: 
-                </Typography>
-                <Button
+    <Authenticator>
+      <Box sx={{ 
+        minHeight: "100vh", 
+        background: "#f5f5f5",
+        position: isFullscreen ? 'fixed' : 'relative',
+        top: isFullscreen ? 0 : 'auto',
+        left: isFullscreen ? 0 : 'auto',
+        right: isFullscreen ? 0 : 'auto',
+        bottom: isFullscreen ? 0 : 'auto',
+        zIndex: isFullscreen ? 9999 : 'auto',
+        overflow: isFullscreen ? 'auto' : 'visible'
+      }}>
+        {!isFullscreen && <Navbar />}
+        <Box
+          sx={{
+            width: isFullscreen ? "100%" : "95%",
+            maxWidth: isFullscreen ? "100%" : 1900,
+            margin: isFullscreen ? 0 : "40px auto 0 auto",
+            background: "#fff",
+            borderRadius: isFullscreen ? 0 : 2,
+            boxShadow: isFullscreen ? "none" : "0 4px 24px rgba(0,0,0,0.08)",
+            p: isFullscreen ? 2 : 4,
+            minHeight: isFullscreen ? "100vh" : 400,
+            position: 'relative'
+          }}
+        >
+          {!isFullscreen && (
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 4 }}>
+              <Box sx={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+                <TextField
+                  label="Nom / Prénom"
+                  value={localName}
+                  onChange={handleNameChange}
+                  sx={{ minWidth: 200 }}
+                  placeholder="Votre nom"
                   size="small"
+                />
+                <TextField
+                  label="Mois"
+                  type="month"
+                  value={month}
+                  onChange={handleMonthChange}
+                  sx={{ minWidth: 140 }}
+                  size="small"
+                  InputLabelProps={{ shrink: true }}
+                />
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 2 }}>
+                  <Typography variant="body2" sx={{ color: '#666', fontSize: '0.8rem' }}>
+                    Zoom: 
+                  </Typography>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => handleGlobalZoom(Math.max(0.5, globalZoom - 0.1))}
+                    sx={{ 
+                      minWidth: 'auto', 
+                      px: 1, 
+                      py: 0.5, 
+                      fontSize: '0.7rem',
+                      borderColor: '#ccc',
+                      color: '#666'
+                    }}
+                  >
+                    -
+                  </Button>
+                  <Typography variant="body2" sx={{ color: '#666', fontSize: '0.8rem', minWidth: '30px', textAlign: 'center' }}>
+                    {Math.round(globalZoom * 100)}%
+                  </Typography>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => handleGlobalZoom(Math.min(1.5, globalZoom + 0.1))}
+                    sx={{ 
+                      minWidth: 'auto', 
+                      px: 1, 
+                      py: 0.5, 
+                      fontSize: '0.7rem',
+                      borderColor: '#ccc',
+                      color: '#666'
+                    }}
+                  >
+                    +
+                  </Button>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => handleGlobalZoom(1)}
+                    sx={{ 
+                      minWidth: 'auto', 
+                      px: 1, 
+                      py: 0.5, 
+                      fontSize: '0.7rem',
+                      borderColor: '#ccc',
+                      color: '#666'
+                    }}
+                  >
+                    Reset
+                  </Button>
+                </Box>
+                
+
+                
+                <Button
                   variant="outlined"
-                  onClick={() => handleGlobalZoom(Math.max(0.5, globalZoom - 0.1))}
-                  sx={{ 
-                    minWidth: 'auto', 
-                    px: 1, 
-                    py: 0.5, 
-                    fontSize: '0.7rem',
-                    borderColor: '#ccc',
-                    color: '#666'
+                  startIcon={<RefreshIcon fontSize="small" />}
+                  onClick={handleReset}
+                  size="small"
+                  sx={{
+                    fontSize: 14,
+                    px: 2,
+                    py: 0.5,
+                    borderColor: '#ff9800',
+                    color: '#ff9800',
+                    textTransform: 'none',
+                    '&:hover': { borderColor: '#f57c00', color: '#f57c00' }
                   }}
                 >
-                  -
+                  Réinitialiser
                 </Button>
-                <Typography variant="body2" sx={{ color: '#666', fontSize: '0.8rem', minWidth: '30px', textAlign: 'center' }}>
+                
+                <Button
+                  variant="contained"
+                  startIcon={<SaveIcon fontSize="small" />}
+                  onClick={handleSave}
+                  size="small"
+                  sx={{
+                    fontSize: 14,
+                    px: 2,
+                    py: 0.5,
+                    backgroundColor: "#894991",
+                    textTransform: 'none',
+                    '&:hover': { backgroundColor: '#6a3a7a' }
+                  }}
+                >
+                  Sauvegarder
+                </Button>
+                
+                <Button
+                  variant="outlined"
+                  startIcon={<DescriptionIcon fontSize="small" />}
+                  onClick={handleExport}
+                  size="small"
+                  sx={{
+                    fontSize: 14,
+                    px: 2,
+                    py: 0.5,
+                    borderColor: '#4caf50',
+                    color: '#4caf50',
+                    textTransform: 'none',
+                    '&:hover': { borderColor: '#388e3c', color: '#388e3c' }
+                  }}
+                >
+                  Exporter
+                </Button>
+              </Box>
+            </Box>
+          )}
+          
+          {/* Barre d'outils en mode plein écran */}
+          {isFullscreen && (
+            <Box sx={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'space-between', 
+              mb: 2, 
+              p: 2, 
+              background: '#f8f9fa', 
+              borderRadius: 1,
+              border: '1px solid #e9ecef'
+            }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Typography variant="h6" sx={{ color: "#894991", fontWeight: 600 }}>
+                  {name} - {month}
+                </Typography>
+              </Box>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                <IconButton
+                  size="small"
+                  onClick={() => handleGlobalZoom(Math.max(0.3, globalZoom - 0.1))}
+                  sx={{ color: '#666' }}
+                  title="Zoom -"
+                >
+                  <ZoomOutIcon fontSize="small" />
+                </IconButton>
+                <Typography variant="body2" sx={{ color: '#666', fontSize: '0.9rem', minWidth: '40px', textAlign: 'center' }}>
                   {Math.round(globalZoom * 100)}%
                 </Typography>
-                <Button
+                <IconButton
                   size="small"
-                  variant="outlined"
-                  onClick={() => handleGlobalZoom(Math.min(1.5, globalZoom + 0.1))}
-                  sx={{ 
-                    minWidth: 'auto', 
-                    px: 1, 
-                    py: 0.5, 
-                    fontSize: '0.7rem',
-                    borderColor: '#ccc',
-                    color: '#666'
-                  }}
+                  onClick={() => handleGlobalZoom(Math.min(2, globalZoom + 0.1))}
+                  sx={{ color: '#666' }}
+                  title="Zoom +"
                 >
-                  +
-                </Button>
+                  <ZoomInIcon fontSize="small" />
+                </IconButton>
                 <Button
                   size="small"
                   variant="outlined"
                   onClick={() => handleGlobalZoom(1)}
                   sx={{ 
-                    minWidth: 'auto', 
-                    px: 1, 
-                    py: 0.5, 
                     fontSize: '0.7rem',
                     borderColor: '#ccc',
-                    color: '#666'
+                    color: '#666',
+                    ml: 1
                   }}
                 >
                   Reset
                 </Button>
+                <IconButton
+                  size="small"
+                  onClick={toggleFullscreen}
+                  sx={{ color: '#666', ml: 1 }}
+                  title="Quitter le plein écran"
+                >
+                  <FullscreenExitIcon fontSize="small" />
+                </IconButton>
               </Box>
-              
+            </Box>
+          )}
 
-              
+          {/* Bouton plein écran en mode normal */}
+          {!isFullscreen && (
+            <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
               <Button
                 variant="outlined"
-                startIcon={<RefreshIcon fontSize="small" />}
-                onClick={handleReset}
+                startIcon={<FullscreenIcon fontSize="small" />}
+                onClick={toggleFullscreen}
                 size="small"
                 sx={{
                   fontSize: 14,
                   px: 2,
                   py: 0.5,
-                  borderColor: '#ff9800',
-                  color: '#ff9800',
-                  textTransform: 'none',
-                  '&:hover': { borderColor: '#f57c00', color: '#f57c00' }
-                }}
-              >
-                Réinitialiser
-              </Button>
-              
-              <Button
-                variant="contained"
-                startIcon={<SaveIcon fontSize="small" />}
-                onClick={handleSave}
-                size="small"
-                sx={{
-                  fontSize: 14,
-                  px: 2,
-                  py: 0.5,
-                  backgroundColor: "#894991",
-                  textTransform: 'none',
-                  '&:hover': { backgroundColor: '#6a3a7a' }
-                }}
-              >
-                Sauvegarder
-              </Button>
-              
-              <Button
-                variant="outlined"
-                startIcon={<DescriptionIcon fontSize="small" />}
-                onClick={handleExport}
-                size="small"
-                sx={{
-                  fontSize: 14,
-                  px: 2,
-                  py: 0.5,
-                  borderColor: '#4caf50',
-                  color: '#4caf50',
-                  textTransform: 'none',
-                  '&:hover': { borderColor: '#388e3c', color: '#388e3c' }
-                }}
-              >
-                Exporter
-              </Button>
-            </Box>
-          </Box>
-        )}
-        
-        {/* Barre d'outils en mode plein écran */}
-        {isFullscreen && (
-          <Box sx={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'space-between', 
-            mb: 2, 
-            p: 2, 
-            background: '#f8f9fa', 
-            borderRadius: 1,
-            border: '1px solid #e9ecef'
-          }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Typography variant="h6" sx={{ color: "#894991", fontWeight: 600 }}>
-                {name} - {month}
-              </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <IconButton
-                size="small"
-                onClick={() => handleGlobalZoom(Math.max(0.3, globalZoom - 0.1))}
-                sx={{ color: '#666' }}
-                title="Zoom -"
-              >
-                <ZoomOutIcon fontSize="small" />
-              </IconButton>
-              <Typography variant="body2" sx={{ color: '#666', fontSize: '0.9rem', minWidth: '40px', textAlign: 'center' }}>
-                {Math.round(globalZoom * 100)}%
-              </Typography>
-              <IconButton
-                size="small"
-                onClick={() => handleGlobalZoom(Math.min(2, globalZoom + 0.1))}
-                sx={{ color: '#666' }}
-                title="Zoom +"
-              >
-                <ZoomInIcon fontSize="small" />
-              </IconButton>
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={() => handleGlobalZoom(1)}
-                sx={{ 
-                  fontSize: '0.7rem',
                   borderColor: '#ccc',
                   color: '#666',
-                  ml: 1
+                  textTransform: 'none',
+                  '&:hover': { borderColor: '#894991', color: '#894991' }
                 }}
               >
-                Reset
+                Plein écran
               </Button>
-              <IconButton
-                size="small"
-                onClick={toggleFullscreen}
-                sx={{ color: '#666', ml: 1 }}
-                title="Quitter le plein écran"
-              >
-                <FullscreenExitIcon fontSize="small" />
-              </IconButton>
             </Box>
-          </Box>
-        )}
+          )}
 
-        {/* Bouton plein écran en mode normal */}
-        {!isFullscreen && (
-          <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-            <Button
-              variant="outlined"
-              startIcon={<FullscreenIcon fontSize="small" />}
-              onClick={toggleFullscreen}
-              size="small"
-              sx={{
-                fontSize: 14,
-                px: 2,
-                py: 0.5,
-                borderColor: '#ccc',
-                color: '#666',
-                textTransform: 'none',
-                '&:hover': { borderColor: '#894991', color: '#894991' }
-              }}
-            >
-              Plein écran
-            </Button>
-          </Box>
-        )}
-
-        {activityTableProps.map((props, index) => (
-          <ActivityTable key={SECTION_LABELS[index].key} {...props} />
-        ))}
-        
-        {!isFullscreen && (
-          <>
-            <Box sx={{ 
-              width: '100%', 
-              maxWidth: 1700, 
-              mx: 'auto', 
-              mt: 4, 
-              mb: 2, 
-              display: 'flex', 
-              justifyContent: 'flex-end',
-              alignItems: 'center',
-              gap: 2
-            }}>
-              <Box sx={{
-                display: 'flex',
+          {activityTableProps.map((props, index) => (
+            <ActivityTable key={SECTION_LABELS[index].key} {...props} />
+          ))}
+          
+          {!isFullscreen && (
+            <>
+              <Box sx={{ 
+                width: '100%', 
+                maxWidth: 1700, 
+                mx: 'auto', 
+                mt: 4, 
+                mb: 2, 
+                display: 'flex', 
+                justifyContent: 'flex-end',
                 alignItems: 'center',
-                gap: 1,
-                backgroundColor: '#f8f9fa',
-                padding: '12px 16px',
-                borderRadius: '8px',
-                border: '1px solid #e9ecef',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-                minWidth: 'fit-content'
+                gap: 2
               }}>
                 <Box sx={{
                   display: 'flex',
-                  flexDirection: 'column',
                   alignItems: 'center',
-                  minWidth: '60px'
+                  gap: 1,
+                  backgroundColor: '#f8f9fa',
+                  padding: '12px 16px',
+                  borderRadius: '8px',
+                  border: '1px solid #e9ecef',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+                  minWidth: 'fit-content'
                 }}>
-                  <Typography sx={{ 
-                    fontSize: '0.75rem', 
-                    color: '#6c757d', 
-                    fontWeight: 500,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
+                  <Box sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    minWidth: '60px'
                   }}>
-                    Facturés
-                  </Typography>
-                  <Typography sx={{ 
-                    fontSize: '1.5rem', 
-                    color: '#894991', 
-                    fontWeight: 700,
-                    lineHeight: 1
+                    <Typography sx={{ 
+                      fontSize: '0.75rem', 
+                      color: '#6c757d', 
+                      fontWeight: 500,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px'
+                    }}>
+                      Facturés
+                    </Typography>
+                    <Typography sx={{ 
+                      fontSize: '1.5rem', 
+                      color: '#894991', 
+                      fontWeight: 700,
+                      lineHeight: 1
+                    }}>
+                      {totalDays.toFixed(2)}
+                    </Typography>
+                  </Box>
+                  <Box sx={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    color: '#6c757d',
+                    fontSize: '1.2rem',
+                    fontWeight: 300
                   }}>
-                    {totalDays.toFixed(2)}
-                  </Typography>
-                </Box>
-                <Box sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  color: '#6c757d',
-                  fontSize: '1.2rem',
-                  fontWeight: 300
-                }}>
-                  /
-                </Box>
-                <Box sx={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  minWidth: '60px'
-                }}>
-                  <Typography sx={{ 
-                    fontSize: '0.75rem', 
-                    color: '#6c757d', 
-                    fontWeight: 500,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
+                    /
+                  </Box>
+                  <Box sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    minWidth: '60px'
                   }}>
-                    Jours Ouvrés
-                  </Typography>
-                  <Typography sx={{ 
-                    fontSize: '1.5rem', 
-                    color: '#495057', 
-                    fontWeight: 700,
-                    lineHeight: 1
+                    <Typography sx={{ 
+                      fontSize: '0.75rem', 
+                      color: '#6c757d', 
+                      fontWeight: 500,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px'
+                    }}>
+                      Jours Ouvrés
+                    </Typography>
+                    <Typography sx={{ 
+                      fontSize: '1.5rem', 
+                      color: '#495057', 
+                      fontWeight: 700,
+                      lineHeight: 1
+                    }}>
+                      {businessDaysInMonth}
+                    </Typography>
+                  </Box>
+                  <Box sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    marginLeft: '12px',
+                    paddingLeft: '12px',
+                    borderLeft: '1px solid #dee2e6'
                   }}>
-                    {businessDaysInMonth}
-                  </Typography>
-                </Box>
-                <Box sx={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  marginLeft: '12px',
-                  paddingLeft: '12px',
-                  borderLeft: '1px solid #dee2e6'
-                }}>
-                  <Typography sx={{ 
-                    fontSize: '0.75rem', 
-                    color: '#6c757d', 
-                    fontWeight: 500,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.5px'
-                  }}>
-                    Taux
-                  </Typography>
-                  <Typography sx={{ 
-                    fontSize: '1.2rem', 
-                    color: totalDays / businessDaysInMonth >= 0.8 ? '#28a745' : totalDays / businessDaysInMonth >= 0.6 ? '#ffc107' : '#dc3545',
-                    fontWeight: 700,
-                    lineHeight: 1
-                  }}>
-                    {((totalDays / businessDaysInMonth) * 100).toFixed(1)}%
-                  </Typography>
+                    <Typography sx={{ 
+                      fontSize: '0.75rem', 
+                      color: '#6c757d', 
+                      fontWeight: 500,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.5px'
+                    }}>
+                      Taux
+                    </Typography>
+                    <Typography sx={{ 
+                      fontSize: '1.2rem', 
+                      color: totalDays / businessDaysInMonth >= 0.8 ? '#28a745' : totalDays / businessDaysInMonth >= 0.6 ? '#ffc107' : '#dc3545',
+                      fontWeight: 700,
+                      lineHeight: 1
+                    }}>
+                      {((totalDays / businessDaysInMonth) * 100).toFixed(1)}%
+                    </Typography>
+                  </Box>
                 </Box>
               </Box>
-            </Box>
-            {saved && <Typography sx={{ color: "green", ml: 3, fontWeight: 500 }}>Compte rendu sauvegardé !</Typography>}
-            {error && <Typography sx={{ color: "red", mt: 2, fontWeight: 500 }}>{error}</Typography>}
-          </>
-        )}
-      </Box>
+              {saved && <Typography sx={{ color: "green", ml: 3, fontWeight: 500 }}>Compte rendu sauvegardé !</Typography>}
+              {error && <Typography sx={{ color: "red", mt: 2, fontWeight: 500 }}>{error}</Typography>}
+            </>
+          )}
+        </Box>
 
-      {/* Snackbar pour les feedbacks */}
-      <Snackbar
-        open={snackbar.open}
-        autoHideDuration={4000}
-        onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-      >
-        <Alert 
-          onClose={() => setSnackbar(prev => ({ ...prev, open: false }))} 
-          severity={snackbar.severity}
-          sx={{ width: '100%' }}
+        {/* Snackbar pour les feedbacks */}
+        <Snackbar
+          open={snackbar.open}
+          autoHideDuration={4000}
+          onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
         >
-          {snackbar.message}
-        </Alert>
-      </Snackbar>
-    </Box>
+          <Alert 
+            onClose={() => setSnackbar(prev => ({ ...prev, open: false }))} 
+            severity={snackbar.severity}
+            sx={{ width: '100%' }}
+          >
+            {snackbar.message}
+          </Alert>
+        </Snackbar>
+      </Box>
+    </Authenticator>
   );
 }
