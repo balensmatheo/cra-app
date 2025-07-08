@@ -20,11 +20,7 @@ import { useCRAState, type Category, type CategoriesState, type DataState } from
 import { type SectionKey } from "../constants/categories";
 import { CATEGORY_OPTIONS, SECTION_LABELS, NAME_DEBOUNCE_DELAY } from "../constants/ui";
 import { isFutureMonth, isDuplicateCategory } from "../constants/validation";
-import { Amplify } from "aws-amplify"
-import '@aws-amplify/ui-react/styles.css';
-import outputs from "../amplify_outputs.json"
-import { Authenticator } from '@aws-amplify/ui-react';
-Amplify.configure(outputs)
+
 
 export default function Home() {
   const today = new Date();
@@ -329,7 +325,6 @@ export default function Home() {
     }), [SECTION_LABELS, days, categories, data, createSectionHandlers, globalZoom, tableRefs, handleSyncScroll]);
 
   return (
-    <Authenticator>
       <Box sx={{ 
         minHeight: "100vh", 
         background: "#f5f5f5",
@@ -709,6 +704,5 @@ export default function Home() {
           </Alert>
         </Snackbar>
       </Box>
-    </Authenticator>
   );
 }
