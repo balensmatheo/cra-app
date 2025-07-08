@@ -7,7 +7,7 @@ async function signout() {
   try {
     await signOut();
     // Optionally, you can redirect or refresh the page after sign out
-    // window.location.reload();
+    window.location.reload();
   } catch (error) {
     console.error("Erreur lors de la déconnexion :", error);
   }
