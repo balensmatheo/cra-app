@@ -1,5 +1,17 @@
 import Box from '@mui/material/Box';
 import Image from "next/image";
+import { signOut } from 'aws-amplify/auth';
+import Button from '@mui/material/Button';
+
+async function signout() {
+  try {
+    await signOut();
+    // Optionally, you can redirect or refresh the page after sign out
+    // window.location.reload();
+  } catch (error) {
+    console.error("Erreur lors de la déconnexion :", error);
+  }
+}
 
 export default function Navbar() {
   return (
@@ -27,6 +39,15 @@ export default function Navbar() {
       }}>
         Compte rendu d'activité
       </Box>
+      <Box sx={{ flex: 1 }} />
+      <Button
+        variant="outlined"
+        color="secondary"
+        onClick={signout}
+        sx={{ ml: 2, textTransform: 'none', borderColor: '#894991', color: '#894991', '&:hover': { borderColor: '#6a3a7a', color: '#6a3a7a' } }}
+      >
+        Se déconnecter
+      </Button>
     </Box>
   );
 } 
