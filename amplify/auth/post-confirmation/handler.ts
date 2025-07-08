@@ -1,20 +1,27 @@
-import type { PostConfirmationTriggerHandler } from 'aws-lambda';
 import {
-  CognitoIdentityProviderClient,
-  AdminAddUserToGroupCommand
-} from '@aws-sdk/client-cognito-identity-provider';
-import { env } from '$amplify/env/post-confirmation';
-
-const client = new CognitoIdentityProviderClient();
-
-// add user to group
-export const handler: PostConfirmationTriggerHandler = async (event) => {
-  const command = new AdminAddUserToGroupCommand({
-    GroupName: env.GROUP_NAME,
-    Username: event.userName,
-    UserPoolId: event.userPoolId
-  });
-  const response = await client.send(command);
-  console.log('processed', response.$metadata.requestId);
-  return event;
-};
+    CognitoIdentityProviderClient,
+    AdminAddUserToGroupCommand,
+  } from '@aws-sdk/client-cognito-identity-provider';
+  
+  const client = new CognitoIdentityProviderClient({});
+  
+  export const handler = async (event: any) => {
+    const groupName = 'USERS';
+    const userPoolId = event.userPoolId;
+    const username = event.userName;
+  
+    try {
+      const command = new AdminAddUserToGroupCommand({
+        GroupName: groupName,
+        UserPoolId: userPoolId,
+        Username: username,
+      });
+  
+      await client.send(command);
+      console.log(`✅ User ${username} added to group ${groupName}`);
+    } catch (error) {
+      console.error(`❌ Error adding user to group:`, error);
+    }
+  
+    return event;
+  };
