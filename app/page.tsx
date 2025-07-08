@@ -13,6 +13,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 
 import Navbar from "../components/Navbar";
 import ActivityTable from "../components/ActivityTable";
+import Signin from "../components/Signin";
 import { exportExcel } from "../utils/exportExcel";
 import { useDebounce } from "../hooks/useDebounce";
 import { useCRAEngine } from "../hooks/useCRAEngine";
@@ -23,7 +24,6 @@ import { isFutureMonth, isDuplicateCategory } from "../constants/validation";
 import type { AppProps } from 'next/app';
 import { Amplify } from 'aws-amplify';
 import outputs from '@/amplify_outputs.json';
-import '@aws-amplify/ui-react/styles.css';
 
 Amplify.configure(outputs);
 
@@ -330,7 +330,8 @@ export default function Home() {
     }), [SECTION_LABELS, days, categories, data, createSectionHandlers, globalZoom, tableRefs, handleSyncScroll]);
 
   return (
-        <Box sx={{ 
+    <Signin>
+        <Box sx={{
           minHeight: "100vh", 
           background: "#f5f5f5",
           position: isFullscreen ? 'fixed' : 'relative',
@@ -709,5 +710,6 @@ export default function Home() {
             </Alert>
           </Snackbar>
         </Box>
+    </Signin>
   );
 }
