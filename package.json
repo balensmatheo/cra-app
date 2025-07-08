@@ -30,6 +30,8 @@
   "devDependencies": {
     "@aws-amplify/backend": "^1.16.1",
     "@aws-amplify/backend-cli": "^1.8.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.840.0",
+    "@types/aws-lambda": "^8.10.150",
     "@types/exceljs": "^0.5.3",
     "@types/node": "^20",
     "@types/react": "^19",

@@ -10,7 +10,7 @@ import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import RefreshIcon from '@mui/icons-material/Refresh';
-
+import { fetchAuthSession } from 'aws-amplify/auth';
 import Navbar from "../components/Navbar";
 import ActivityTable from "../components/ActivityTable";
 import { exportExcel } from "../utils/exportExcel";
@@ -272,11 +272,12 @@ export default function AppContent() {
       };
     }), [SECTION_LABELS, days, categories, data, createSectionHandlers, globalZoom, tableRefs, handleSyncScroll]);
   const [userEmail, setUserEmail] = useState<string>("");
+  
+
 
   useEffect(() => {
     getCurrentUser().then(user => {
       setUserEmail(user?.signInDetails?.loginId || user?.username || "");
-      console.log(user)
     }).catch(() => setUserEmail(""));
   }, []);
 
