@@ -20,6 +20,10 @@ import { useCRAState, type Category, type CategoriesState, type DataState } from
 import { type SectionKey } from "../constants/categories";
 import { CATEGORY_OPTIONS, SECTION_LABELS, NAME_DEBOUNCE_DELAY } from "../constants/ui";
 import { isFutureMonth, isDuplicateCategory } from "../constants/validation";
+import { Amplify } from "aws-amplify"
+import outputs from "../../amplify_outputs.json"
+
+Amplify.configure(outputs)
 
 export default function Home() {
   const today = new Date();
