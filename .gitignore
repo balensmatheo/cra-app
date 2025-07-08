@@ -45,3 +45,5 @@ next-env.d.ts
 node_modules
 .amplify
 amplifyconfiguration*
+
+amplify_outputs*
