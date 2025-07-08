@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import Signin from "../components/SignIn";
+import Signin from "../components/Signin";
 import { getCurrentUser } from "aws-amplify/auth";
 import AppContent from "./AppContent";
 import { Amplify } from 'aws-amplify';
