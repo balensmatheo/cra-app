@@ -1,10 +1,10 @@
+// amplify/auth/post-confirmation/resource.ts
 import { defineFunction } from '@aws-amplify/backend';
 
 export const postConfirmation = defineFunction({
   name: 'post-confirmation',
-  // optionally define an environment variable for your group name
   environment: {
-    GROUP_NAME: 'USERS'
+    GROUP_NAME: 'USERS',
   },
-  resourceGroupName: 'auth'
+  resourceGroupName: 'auth', // obligatoire pour que la fonction soit liée à Cognito
 });
