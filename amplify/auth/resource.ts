@@ -14,6 +14,16 @@ export const auth = defineAuth({
   triggers: {
     postConfirmation,
   },
+  userAttributes: {
+    familyName: {
+      required: true,
+      mutable: true,
+    },
+    givenName: {
+      required: true,
+      mutable: true,
+    },
+  },
   access: (allow) => [
     allow.resource(postConfirmation).to(["addUserToGroup"]),
   ],

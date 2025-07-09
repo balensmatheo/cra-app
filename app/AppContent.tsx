@@ -21,7 +21,10 @@ import { type SectionKey } from "../constants/categories";
 import { CATEGORY_OPTIONS, SECTION_LABELS, NAME_DEBOUNCE_DELAY } from "../constants/ui";
 import { isFutureMonth, isDuplicateCategory } from "../constants/validation";
 import type { AppProps } from 'next/app';
+import { generateClient } from "aws-amplify/data";
+import type { Schema } from "../amplify/data/resource";
 import { getCurrentUser } from "aws-amplify/auth";
+import Skeleton from '@mui/material/Skeleton';
 
 export default function AppContent() {
   const today = new Date();
@@ -78,26 +81,53 @@ export default function AppContent() {
     }
   }, [debouncedLocalName, name]);
   useEffect(() => {
-    if (!name.trim()) {
-      return;
+    async function fetchCRA() {
+      if (!name.trim()) {
+        return;
+      }
+      try {
+        const user = await getCurrentUser();
+        const ownerIdLoad: string = (user?.username || user?.signInDetails?.loginId || "");
+        if (!ownerIdLoad) throw new Error("Impossible de récupérer l'utilisateur connecté");
+        const ownerIdStr: string = String(ownerIdLoad);
+        const [year, monthNum] = month.split("-").map(Number);
+        
+        const { data: exists } = await client.models.CRA.list({
+          filter: {
+            owner: { eq: ownerIdLoad },
+            year: { eq: year },
+            month: { eq: monthNum }
+          }
+        });
+        if (exists && exists.length > 0) {
+          // @ts-expect-error Typage généré trop strict, ownerIdLoad est bien une string ici
+          const parsed = JSON.parse(exists[0].dailyEntries);
+          loadState(parsed);
+          setSaved(true);
+        } else {
+          loadState({
+            categories: {
+              facturees: [{ id: 1, label: "" }],
+              non_facturees: [{ id: 1, label: "" }],
+              autres: [{ id: 1, label: "" }],
+            },
+            data: { facturees: {}, non_facturees: {}, autres: {} },
+          });
+          setSaved(false);
+        }
+      } catch (err) {
+        loadState({
+          categories: {
+            facturees: [{ id: 1, label: "" }],
+            non_facturees: [{ id: 1, label: "" }],
+            autres: [{ id: 1, label: "" }],
+          },
+          data: { facturees: {}, non_facturees: {}, autres: {} },
+        });
+        setSaved(false);
+      }
     }
-    const key = `cra_sections_${name}_${month}`;
-    const savedData = localStorage.getItem(key);
-    if (savedData) {
-      const parsed = JSON.parse(savedData);
-      loadState(parsed);
-      setSaved(true);
-    } else {
-      loadState({
-        categories: {
-          facturees: [{ id: 1, label: "" }],
-          non_facturees: [{ id: 1, label: "" }],
-          autres: [{ id: 1, label: "" }],
-        },
-        data: { facturees: {}, non_facturees: {}, autres: {} },
-      });
-      setSaved(false);
-    }
+    fetchCRA();
     // eslint-disable-next-line
   }, [name, month, loadState]);
   const handleCellChange = useCallback((section: SectionKey, catId: number, date: string, value: string) => {
@@ -132,7 +162,7 @@ export default function AppContent() {
     const newMonth = e.target.value;
     setMonth(newMonth);
   }, []);
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     if (!name) {
       setSnackbar({
         open: true,
@@ -150,16 +180,47 @@ export default function AppContent() {
       return;
     }
     setError("");
-    localStorage.setItem(
-      `cra_sections_${name}_${month}`,
-      JSON.stringify({ categories, data })
-    );
-    setSaved(true);
-    setSnackbar({
-      open: true,
-      message: 'Compte rendu sauvegardé !',
-      severity: 'success'
-    });
+    try {
+      const user = await getCurrentUser();
+      const ownerId = user?.username || user?.signInDetails?.loginId;
+      if (!ownerId) throw new Error("Impossible de récupérer l'utilisateur connecté");
+      const [year, monthNum] = month.split("-").map(Number);
+      const dailyEntriesJSON = JSON.stringify({ categories, data });
+      const { data: exists } = await client.models.CRA.list({
+        filter: {
+          owner: { eq: ownerId },
+          year: { eq: year },
+          month: { eq: monthNum }
+        }
+      });
+      if (exists && exists.length > 0) {
+        const existing = exists[0];
+        await client.models.CRA.update({
+          id: existing.id,
+          dailyEntries: dailyEntriesJSON
+        }, { authMode: 'userPool' });
+      } else {
+        await client.models.CRA.create({
+          owner: ownerId,
+          year,
+          month: monthNum,
+          dailyEntries: dailyEntriesJSON
+        }, { authMode: 'userPool' });
+      }
+      setSaved(true);
+      setSnackbar({
+        open: true,
+        message: 'Compte rendu sauvegardé sur le cloud !',
+        severity: 'success'
+      });
+    } catch (err: any) {
+      setError(err.message || 'Erreur lors de la sauvegarde du CRA');
+      setSnackbar({
+        open: true,
+        message: err.message || 'Erreur lors de la sauvegarde du CRA',
+        severity: 'error'
+      });
+    }
   }, [name, hasInvalidCategory, categories, data, month]);
   const handleReset = useCallback(() => {
     if (!name) {
@@ -272,13 +333,17 @@ export default function AppContent() {
       };
     }), [SECTION_LABELS, days, categories, data, createSectionHandlers, globalZoom, tableRefs, handleSyncScroll]);
   const [userEmail, setUserEmail] = useState<string>("");
-  
+  const [userGivenName, setUserGivenName] = useState("");
+  const [userFamilyName, setUserFamilyName] = useState("");
+  const client = generateClient<Schema>();
 
 
   useEffect(() => {
-    getCurrentUser().then(user => {
-      setUserEmail(user?.signInDetails?.loginId || user?.username || "");
-    }).catch(() => setUserEmail(""));
+    fetchAuthSession().then(session => {
+      const payload = session.tokens?.idToken?.payload || {};
+      setUserGivenName(typeof payload.given_name === 'string' ? payload.given_name : "");
+      setUserFamilyName(typeof payload.family_name === 'string' ? payload.family_name : "");
+    });
   }, []);
 
   return (
@@ -294,13 +359,6 @@ export default function AppContent() {
       overflow: isFullscreen ? 'auto' : 'visible'
     }}>
       <Navbar />
-      {userEmail && (
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', px: 4, mt: 1 }}>
-          <Typography variant="body2" sx={{ color: '#894991', fontWeight: 500 }}>
-            {userEmail}
-          </Typography>
-        </Box>
-      )}
       <Box
         sx={{
           width: isFullscreen ? "100%" : "95%",
@@ -317,14 +375,12 @@ export default function AppContent() {
         {!isFullscreen && (
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 4 }}>
             <Box sx={{ display: 'flex', gap: 3, alignItems: 'center' }}>
-              <TextField
-                label="Nom / Prénom"
-                value={localName}
-                onChange={handleNameChange}
-                sx={{ minWidth: 200 }}
-                placeholder="Votre nom"
-                size="small"
-              />
+              <Typography variant="body1" sx={{ minWidth: 200, fontWeight: 700, color: '#894991', fontSize: '1rem', letterSpacing: 0.5 }}>
+                {userFamilyName && userGivenName
+                  ? `${userGivenName} ${userFamilyName} `
+                  : <Skeleton variant="text" width={160} height={32} sx={{ bgcolor: '#eee', borderRadius: 1, display: 'inline-block' }} />
+                }
+              </Typography>
               <TextField
                 label="Mois"
                 type="month"
