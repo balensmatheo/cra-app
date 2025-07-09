@@ -163,14 +163,6 @@ export default function AppContent() {
     setMonth(newMonth);
   }, []);
   const handleSave = useCallback(async () => {
-    if (!name) {
-      setSnackbar({
-        open: true,
-        message: 'Merci de renseigner votre nom.',
-        severity: 'error'
-      });
-      return;
-    }
     if (hasInvalidCategory) {
       setSnackbar({
         open: true,
@@ -210,7 +202,7 @@ export default function AppContent() {
       setSaved(true);
       setSnackbar({
         open: true,
-        message: 'Compte rendu sauvegardé sur le cloud !',
+        message: 'Compte rendu sauvegardé',
         severity: 'success'
       });
     } catch (err: any) {
