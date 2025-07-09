@@ -25,12 +25,26 @@ import { generateClient } from "aws-amplify/data";
 import type { Schema } from "../amplify/data/resource";
 import { getCurrentUser } from "aws-amplify/auth";
 import Skeleton from '@mui/material/Skeleton';
+import CircularProgress from '@mui/material/CircularProgress';
+
+const client = generateClient<Schema>();
+
+const initialEmptyState = {
+  categories: {
+    facturees: [{ id: 1, label: "" }],
+    non_facturees: [{ id: 1, label: "" }],
+    autres: [{ id: 1, label: "" }],
+  },
+  data: {
+    facturees: {},
+    non_facturees: {},
+    autres: {},
+  }
+};
+
 
 export default function AppContent() {
   const today = new Date();
-  const [name, setName] = useState("");
-  const [localName, setLocalName] = useState("");
-  const debouncedLocalName = useDebounce(localName, NAME_DEBOUNCE_DELAY);
   const [month, setMonth] = useState(
     `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`
   );
@@ -72,64 +86,71 @@ export default function AppContent() {
         return hasData && !cat.label;
       })
     ), [categories, data]);
+  const [craId, setCraId] = useState<string | null>(null);
+  const ownerIdRef = useRef<string | null>(null);
+  const [userGivenName, setUserGivenName] = useState("");
+  const [userFamilyName, setUserFamilyName] = useState("");
+  const [userEmail, setUserEmail] = useState<string>("");
+  const [isLoadingCRA, setIsLoadingCRA] = useState(true);
+
+
+  // Récupérer ownerId et infos utilisateur une seule fois
   useEffect(() => {
-    setLocalName(name);
-  }, [name]);
-  useEffect(() => {
-    if (debouncedLocalName !== name) {
-      setName(debouncedLocalName);
+    fetchAuthSession().then(session => {
+      const payload = session.tokens?.idToken?.payload || {};
+      setUserGivenName(typeof payload.given_name === 'string' ? payload.given_name : "");
+      setUserFamilyName(typeof payload.family_name === 'string' ? payload.family_name : "");
+      setUserEmail(typeof payload.email === 'string' ? payload.email : "");
+      ownerIdRef.current = typeof payload.sub === 'string' ? payload.sub : null;
+    });
+  }, []);
+
+  // Fonction pour reset l'état CRA
+  const resetState = useCallback(() => {
+    loadState(initialEmptyState);
+  }, [loadState]);
+
+  // Fonction fetchCRA isolée et mémorisée
+  const fetchCRA = useCallback(async () => {
+    setIsLoadingCRA(true);
+    if (!ownerIdRef.current) {
+      setIsLoadingCRA(false);
+      return;
     }
-  }, [debouncedLocalName, name]);
-  useEffect(() => {
-    async function fetchCRA() {
-      if (!name.trim()) {
-        return;
-      }
-      try {
-        const user = await getCurrentUser();
-        const ownerIdLoad: string = (user?.username || user?.signInDetails?.loginId || "");
-        if (!ownerIdLoad) throw new Error("Impossible de récupérer l'utilisateur connecté");
-        const ownerIdStr: string = String(ownerIdLoad);
-        const [year, monthNum] = month.split("-").map(Number);
-        
-        const { data: exists } = await client.models.CRA.list({
-          filter: {
-            owner: { eq: ownerIdLoad },
-            year: { eq: year },
-            month: { eq: monthNum }
-          }
-        });
-        if (exists && exists.length > 0) {
-          // @ts-expect-error Typage généré trop strict, ownerIdLoad est bien une string ici
-          const parsed = JSON.parse(exists[0].dailyEntries);
-          loadState(parsed);
-          setSaved(true);
-        } else {
-          loadState({
-            categories: {
-              facturees: [{ id: 1, label: "" }],
-              non_facturees: [{ id: 1, label: "" }],
-              autres: [{ id: 1, label: "" }],
-            },
-            data: { facturees: {}, non_facturees: {}, autres: {} },
-          });
-          setSaved(false);
+    const [year, monthNum] = month.split("-").map(Number);
+    try {
+      const { data: exists } = await client.models.CRA.list({
+        filter: {
+          owner: { eq: ownerIdRef.current! },
+          year: { eq: year },
+          month: { eq: monthNum }
         }
-      } catch (err) {
-        loadState({
-          categories: {
-            facturees: [{ id: 1, label: "" }],
-            non_facturees: [{ id: 1, label: "" }],
-            autres: [{ id: 1, label: "" }],
-          },
-          data: { facturees: {}, non_facturees: {}, autres: {} },
-        });
+      });
+      if (exists && exists.length > 0) {
+        const parsed = JSON.parse(exists[0].dailyEntries || "{}" );
+        loadState(parsed);
+        setCraId(exists[0].id);
+        setSaved(true);
+      } else {
+        resetState();
+        setCraId(null);
         setSaved(false);
       }
+    } catch (err) {
+      resetState();
+      setCraId(null);
+      setSaved(false);
+    } finally {
+      setIsLoadingCRA(false);
     }
+  }, [month, loadState, resetState]);
+
+  // Charger le CRA à l'initialisation ou quand le mois change
+  useEffect(() => {
+    if (!ownerIdRef.current) return;
     fetchCRA();
-    // eslint-disable-next-line
-  }, [name, month, loadState]);
+  }, [fetchCRA]);
+
   const handleCellChange = useCallback((section: SectionKey, catId: number, date: string, value: string) => {
     updateCell(section, catId, date, value);
     setSaved(false);
@@ -162,7 +183,9 @@ export default function AppContent() {
     const newMonth = e.target.value;
     setMonth(newMonth);
   }, []);
+  // Sauvegarde CRA optimisée
   const handleSave = useCallback(async () => {
+    if (!ownerIdRef.current) return;
     if (hasInvalidCategory) {
       setSnackbar({
         open: true,
@@ -173,27 +196,26 @@ export default function AppContent() {
     }
     setError("");
     try {
-      const user = await getCurrentUser();
-      const ownerId = user?.username || user?.signInDetails?.loginId;
-      if (!ownerId) throw new Error("Impossible de récupérer l'utilisateur connecté");
       const [year, monthNum] = month.split("-").map(Number);
       const dailyEntriesJSON = JSON.stringify({ categories, data });
-      const { data: exists } = await client.models.CRA.list({
-        filter: {
-          owner: { eq: ownerId },
-          year: { eq: year },
-          month: { eq: monthNum }
+      if (craId) {
+        try {
+          await client.models.CRA.update({
+            id: craId,
+            dailyEntries: dailyEntriesJSON
+          }, { authMode: 'userPool' });
+        } catch (updateErr) {
+          console.error("Erreur lors de la mise à jour du CRA:", updateErr);
+          setSnackbar({
+            open: true,
+            message: 'Erreur lors de la mise à jour du CRA',
+            severity: 'error'
+          });
+          return;
         }
-      });
-      if (exists && exists.length > 0) {
-        const existing = exists[0];
-        await client.models.CRA.update({
-          id: existing.id,
-          dailyEntries: dailyEntriesJSON
-        }, { authMode: 'userPool' });
       } else {
         await client.models.CRA.create({
-          owner: ownerId,
+          owner: ownerIdRef.current!,
           year,
           month: monthNum,
           dailyEntries: dailyEntriesJSON
@@ -205,6 +227,7 @@ export default function AppContent() {
         message: 'Compte rendu sauvegardé',
         severity: 'success'
       });
+      fetchCRA();
     } catch (err: any) {
       setError(err.message || 'Erreur lors de la sauvegarde du CRA');
       setSnackbar({
@@ -213,12 +236,12 @@ export default function AppContent() {
         severity: 'error'
       });
     }
-  }, [name, hasInvalidCategory, categories, data, month]);
+  }, [hasInvalidCategory, categories, data, month, craId, fetchCRA]);
   const handleReset = useCallback(() => {
-    if (!name) {
+    if (!ownerIdRef.current) {
       setSnackbar({
         open: true,
-        message: 'Merci de renseigner votre nom.',
+        message: 'Impossible de réinitialiser les données sans utilisateur connecté.',
         severity: 'error'
       });
       return;
@@ -237,7 +260,7 @@ export default function AppContent() {
       message: 'Données réinitialisées !',
       severity: 'success'
     });
-  }, [name, loadState]);
+  }, [loadState]);
   const handleExport = useCallback(() => {
     if (hasInvalidCategory) {
       setSnackbar({
@@ -249,7 +272,7 @@ export default function AppContent() {
     }
     setError("");
     exportExcel({
-      name,
+      name: userGivenName + " " + userFamilyName,
       month,
       days,
       categories,
@@ -260,10 +283,7 @@ export default function AppContent() {
       message: 'Export Excel généré avec succès !',
       severity: 'success'
     });
-  }, [hasInvalidCategory, name, month, days, categories, data]);
-  const handleNameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setLocalName(e.target.value);
-  }, []);
+  }, [hasInvalidCategory, userGivenName, userFamilyName, month, days, categories, data]);
   const totalDays = getTotalWorkedDays();
   const businessDaysInMonth = getBusinessDaysInMonth();
   const tableRefs: Record<SectionKey, React.RefObject<HTMLDivElement | null>> = {
@@ -324,19 +344,6 @@ export default function AppContent() {
         ...handlers
       };
     }), [SECTION_LABELS, days, categories, data, createSectionHandlers, globalZoom, tableRefs, handleSyncScroll]);
-  const [userEmail, setUserEmail] = useState<string>("");
-  const [userGivenName, setUserGivenName] = useState("");
-  const [userFamilyName, setUserFamilyName] = useState("");
-  const client = generateClient<Schema>();
-
-
-  useEffect(() => {
-    fetchAuthSession().then(session => {
-      const payload = session.tokens?.idToken?.payload || {};
-      setUserGivenName(typeof payload.given_name === 'string' ? payload.given_name : "");
-      setUserFamilyName(typeof payload.family_name === 'string' ? payload.family_name : "");
-    });
-  }, []);
 
   return (
     <Box sx={{ 
@@ -440,7 +447,7 @@ export default function AppContent() {
               <Button
                 variant="outlined"
                 startIcon={<RefreshIcon fontSize="small" />}
-                onClick={handleReset}
+                onClick={fetchCRA}
                 size="small"
                 sx={{
                   fontSize: 14,
@@ -452,7 +459,7 @@ export default function AppContent() {
                   '&:hover': { borderColor: '#f57c00', color: '#f57c00' }
                 }}
               >
-                Réinitialiser
+                Recharger
               </Button>
               <Button
                 variant="contained"
@@ -467,6 +474,7 @@ export default function AppContent() {
                   textTransform: 'none',
                   '&:hover': { backgroundColor: '#6a3a7a' }
                 }}
+                disabled={isLoadingCRA || !ownerIdRef.current}
               >
                 Sauvegarder
               </Button>
@@ -504,7 +512,7 @@ export default function AppContent() {
           }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
               <Typography variant="h6" sx={{ color: "#894991", fontWeight: 600 }}>
-                {name} - {month}
+                {userGivenName + " " + userFamilyName} - {month}
               </Typography>
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -573,9 +581,13 @@ export default function AppContent() {
             </Button>
           </Box>
         )}
-        {activityTableProps.map((props, index) => (
-          <ActivityTable key={SECTION_LABELS[index].key} {...props} />
-        ))}
+        {isLoadingCRA ? (
+          <Skeleton variant="rectangular" width="100%" height={300} sx={{ borderRadius: 2, my: 4 }} />
+        ) : (
+          activityTableProps.map((props, index) => (
+            <ActivityTable key={SECTION_LABELS[index].key} {...props} />
+          ))
+        )}
         {!isFullscreen && (
           <>
             <Box sx={{ 
