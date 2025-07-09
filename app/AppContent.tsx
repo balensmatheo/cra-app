@@ -92,6 +92,7 @@ export default function AppContent() {
   const [userFamilyName, setUserFamilyName] = useState("");
   const [userEmail, setUserEmail] = useState<string>("");
   const [isLoadingCRA, setIsLoadingCRA] = useState(true);
+  const [isUserLoaded, setIsUserLoaded] = useState(false);
 
 
   // Récupérer ownerId et infos utilisateur une seule fois
@@ -102,6 +103,7 @@ export default function AppContent() {
       setUserFamilyName(typeof payload.family_name === 'string' ? payload.family_name : "");
       setUserEmail(typeof payload.email === 'string' ? payload.email : "");
       ownerIdRef.current = typeof payload.sub === 'string' ? payload.sub : null;
+      setIsUserLoaded(true);
     });
   }, []);
 
@@ -147,9 +149,9 @@ export default function AppContent() {
 
   // Charger le CRA à l'initialisation ou quand le mois change
   useEffect(() => {
-    if (!ownerIdRef.current) return;
+    if (!isUserLoaded || !ownerIdRef.current) return;
     fetchCRA();
-  }, [fetchCRA]);
+  }, [isUserLoaded, ownerIdRef.current, month, fetchCRA]);
 
   const handleCellChange = useCallback((section: SectionKey, catId: number, date: string, value: string) => {
     updateCell(section, catId, date, value);
