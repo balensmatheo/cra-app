@@ -19,12 +19,9 @@ const schema = a.schema({
 
 export type Schema = ClientSchema<typeof schema>;
 
-// export const data = defineData({
-//   schema,
-//   authorizationModes: {
-//     defaultAuthorizationMode: 'userPool',
-//   },
-// });
+export const data = defineData({
+  schema,
+});
 
 /*== STEP 2 ===============================================================
 Go to your frontend source code. From your client-side code, generate a
