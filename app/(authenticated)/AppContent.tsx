@@ -218,13 +218,13 @@ export default function AppContent() {
   return (
     <Box
       sx={{
-        width: isFullscreen ? "100%" : "95%",
+        width: isFullscreen ? "100%" : { xs: "100%", md: "95%" },
         maxWidth: isFullscreen ? "100%" : 1900,
-        margin: isFullscreen ? 0 : "40px auto 0 auto",
+        margin: isFullscreen ? 0 : { xs: 0, md: "40px auto 0 auto" },
         background: "#fff",
-        borderRadius: isFullscreen ? 0 : 2,
-        boxShadow: isFullscreen ? "none" : "0 4px 24px rgba(0,0,0,0.08)",
-        p: isFullscreen ? 2 : 4,
+        borderRadius: isFullscreen ? 0 : { xs: 0, md: 2 },
+        boxShadow: isFullscreen ? "none" : { xs: "none", md: "0 4px 24px rgba(0,0,0,0.08)" },
+        p: isFullscreen ? 2 : { xs: 2, md: 4 },
         minHeight: isFullscreen ? "100vh" : 400,
         position: 'relative'
       }}

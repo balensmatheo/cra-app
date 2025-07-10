@@ -33,12 +33,30 @@ const CRAHeader: React.FC<CRAHeaderProps> = ({
   toggleFullscreen
 }) => {
   return (
-    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 4 }}>
-      <Box sx={{ display: 'flex', gap: 3, alignItems: 'center' }}>
-        <Typography variant="body1" sx={{ minWidth: 200, fontWeight: 700, color: '#894991', fontSize: '1rem', letterSpacing: 0.5 }}>
+    <Box sx={{
+      display: 'flex',
+      flexDirection: { xs: 'column', md: 'row' },
+      alignItems: { xs: 'stretch', md: 'center' },
+      justifyContent: 'space-between',
+      mb: 4,
+      gap: 2
+    }}>
+      <Box sx={{
+        display: 'flex',
+        flexDirection: { xs: 'column', sm: 'row' },
+        gap: 2,
+        alignItems: 'center'
+      }}>
+        <Typography variant="body1" sx={{
+          fontWeight: 700,
+          color: '#894991',
+          fontSize: '1rem',
+          letterSpacing: 0.5,
+          textAlign: { xs: 'center', sm: 'left' }
+        }}>
           {userFamilyName && userGivenName
-            ? `${userGivenName} ${userFamilyName} `
-            : <Skeleton variant="text" width={160} height={32} sx={{ bgcolor: '#eee', borderRadius: 1, display: 'inline-block' }} />
+            ? `${userGivenName} ${userFamilyName}`
+            : <Skeleton variant="text" width={160} height={32} sx={{ bgcolor: '#eee', borderRadius: 1 }} />
           }
         </Typography>
         <TextField
@@ -46,80 +64,82 @@ const CRAHeader: React.FC<CRAHeaderProps> = ({
           type="month"
           value={selectedMonth}
           onChange={handleMonthChange}
-          sx={{ minWidth: 140 }}
+          sx={{ width: { xs: '100%', sm: 180 } }}
           size="small"
           InputLabelProps={{ shrink: true }}
         />
       </Box>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+      <Box sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1,
+        justifyContent: { xs: 'center', md: 'flex-end' },
+        flexWrap: 'wrap'
+      }}>
         <Button
           variant="outlined"
-          startIcon={<RefreshIcon fontSize="small" />}
+          startIcon={<RefreshIcon />}
           onClick={fetchCRA}
           size="small"
           sx={{
-            fontSize: 14,
-            px: 2,
-            py: 0.5,
             borderColor: '#ff9800',
             color: '#ff9800',
             textTransform: 'none',
             '&:hover': { borderColor: '#f57c00', color: '#f57c00' }
           }}
         >
-          Recharger
+          <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+            Recharger
+          </Box>
         </Button>
         <Button
           variant="contained"
-          startIcon={<SaveIcon fontSize="small" />}
+          startIcon={<SaveIcon />}
           onClick={handleSave}
           size="small"
           sx={{
-            fontSize: 14,
-            px: 2,
-            py: 0.5,
             backgroundColor: "#894991",
             textTransform: 'none',
             '&:hover': { backgroundColor: '#6a3a7a' }
           }}
           disabled={isLoadingCRA || !ownerId}
         >
-          Sauvegarder
+          <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+            Sauvegarder
+          </Box>
         </Button>
         <Button
           variant="outlined"
-          startIcon={<DescriptionIcon fontSize="small" />}
+          startIcon={<DescriptionIcon />}
           onClick={handleExport}
           size="small"
           sx={{
-            fontSize: 14,
-            px: 2,
-            py: 0.5,
             borderColor: '#4caf50',
             color: '#4caf50',
             textTransform: 'none',
             '&:hover': { borderColor: '#388e3c', color: '#388e3c' }
           }}
         >
-          Exporter
+          <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+            Exporter
+          </Box>
         </Button>
         <Button
-            variant="outlined"
-            startIcon={<FullscreenIcon fontSize="small" />}
-            onClick={toggleFullscreen}
-            size="small"
-            sx={{
-              fontSize: 14,
-              px: 2,
-              py: 0.5,
-              borderColor: '#ccc',
-              color: '#666',
-              textTransform: 'none',
-              '&:hover': { borderColor: '#894991', color: '#894991' }
-            }}
-          >
+          variant="outlined"
+          startIcon={<FullscreenIcon />}
+          onClick={toggleFullscreen}
+          size="small"
+          sx={{
+            borderColor: '#ccc',
+            color: '#666',
+            textTransform: 'none',
+            '&:hover': { borderColor: '#894991', color: '#894991' }
+          }}
+        >
+          <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
             Plein écran
-          </Button>
+          </Box>
+        </Button>
       </Box>
     </Box>
   );

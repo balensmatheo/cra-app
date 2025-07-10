@@ -59,7 +59,7 @@ export default function Navbar() {
       background: "#fff",
       display: "flex",
       alignItems: "center",
-      padding: "0 32px",
+      padding: { xs: "0 16px", md: "0 32px" },
       height: 72,
       boxShadow: "0 2px 8px #f0f1f2"
     }}>
@@ -92,7 +92,8 @@ export default function Navbar() {
         fontWeight: 700,
         fontSize: 24,
         marginLeft: 5,
-        letterSpacing: 1
+        letterSpacing: 1,
+        display: { xs: 'none', md: 'block' }
       }}>
         Compte rendu d'activité
       </Box>
