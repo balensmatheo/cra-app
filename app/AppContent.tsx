@@ -21,13 +21,30 @@ import { type SectionKey } from "../constants/categories";
 import { CATEGORY_OPTIONS, SECTION_LABELS, NAME_DEBOUNCE_DELAY } from "../constants/ui";
 import { isFutureMonth, isDuplicateCategory } from "../constants/validation";
 import type { AppProps } from 'next/app';
+import { generateClient } from "aws-amplify/data";
+import type { Schema } from "../amplify/data/resource";
 import { getCurrentUser } from "aws-amplify/auth";
+import Skeleton from '@mui/material/Skeleton';
+import CircularProgress from '@mui/material/CircularProgress';
+
+const client = generateClient<Schema>();
+
+const initialEmptyState = {
+  categories: {
+    facturees: [{ id: 1, label: "" }],
+    non_facturees: [{ id: 1, label: "" }],
+    autres: [{ id: 1, label: "" }],
+  },
+  data: {
+    facturees: {},
+    non_facturees: {},
+    autres: {},
+  }
+};
+
 
 export default function AppContent() {
   const today = new Date();
-  const [name, setName] = useState("");
-  const [localName, setLocalName] = useState("");
-  const debouncedLocalName = useDebounce(localName, NAME_DEBOUNCE_DELAY);
   const [month, setMonth] = useState(
     `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`
   );
@@ -69,37 +86,73 @@ export default function AppContent() {
         return hasData && !cat.label;
       })
     ), [categories, data]);
+  const [craId, setCraId] = useState<string | null>(null);
+  const ownerIdRef = useRef<string | null>(null);
+  const [userGivenName, setUserGivenName] = useState("");
+  const [userFamilyName, setUserFamilyName] = useState("");
+  const [userEmail, setUserEmail] = useState<string>("");
+  const [isLoadingCRA, setIsLoadingCRA] = useState(true);
+  const [isUserLoaded, setIsUserLoaded] = useState(false);
+
+
+  // Récupérer ownerId et infos utilisateur une seule fois
   useEffect(() => {
-    setLocalName(name);
-  }, [name]);
-  useEffect(() => {
-    if (debouncedLocalName !== name) {
-      setName(debouncedLocalName);
-    }
-  }, [debouncedLocalName, name]);
-  useEffect(() => {
-    if (!name.trim()) {
+    fetchAuthSession().then(session => {
+      const payload = session.tokens?.idToken?.payload || {};
+      setUserGivenName(typeof payload.given_name === 'string' ? payload.given_name : "");
+      setUserFamilyName(typeof payload.family_name === 'string' ? payload.family_name : "");
+      setUserEmail(typeof payload.email === 'string' ? payload.email : "");
+      ownerIdRef.current = typeof payload.sub === 'string' ? payload.sub : null;
+      setIsUserLoaded(true);
+    });
+  }, []);
+
+  // Fonction pour reset l'état CRA
+  const resetState = useCallback(() => {
+    loadState(initialEmptyState);
+  }, [loadState]);
+
+  // Fonction fetchCRA isolée et mémorisée
+  const fetchCRA = useCallback(async () => {
+    setIsLoadingCRA(true);
+    if (!ownerIdRef.current) {
+      setIsLoadingCRA(false);
       return;
     }
-    const key = `cra_sections_${name}_${month}`;
-    const savedData = localStorage.getItem(key);
-    if (savedData) {
-      const parsed = JSON.parse(savedData);
-      loadState(parsed);
-      setSaved(true);
-    } else {
-      loadState({
-        categories: {
-          facturees: [{ id: 1, label: "" }],
-          non_facturees: [{ id: 1, label: "" }],
-          autres: [{ id: 1, label: "" }],
-        },
-        data: { facturees: {}, non_facturees: {}, autres: {} },
+    const [year, monthNum] = month.split("-").map(Number);
+    try {
+      const { data: exists } = await client.models.CRA.list({
+        filter: {
+          owner: { eq: ownerIdRef.current! },
+          year: { eq: year },
+          month: { eq: monthNum }
+        }
       });
+      if (exists && exists.length > 0) {
+        const parsed = JSON.parse(exists[0].dailyEntries || "{}" );
+        loadState(parsed);
+        setCraId(exists[0].id);
+        setSaved(true);
+      } else {
+        resetState();
+        setCraId(null);
+        setSaved(false);
+      }
+    } catch (err) {
+      resetState();
+      setCraId(null);
       setSaved(false);
+    } finally {
+      setIsLoadingCRA(false);
     }
-    // eslint-disable-next-line
-  }, [name, month, loadState]);
+  }, [month, loadState, resetState]);
+
+  // Charger le CRA à l'initialisation ou quand le mois change
+  useEffect(() => {
+    if (!isUserLoaded || !ownerIdRef.current) return;
+    fetchCRA();
+  }, [isUserLoaded, ownerIdRef.current, month, fetchCRA]);
+
   const handleCellChange = useCallback((section: SectionKey, catId: number, date: string, value: string) => {
     updateCell(section, catId, date, value);
     setSaved(false);
@@ -132,15 +185,9 @@ export default function AppContent() {
     const newMonth = e.target.value;
     setMonth(newMonth);
   }, []);
-  const handleSave = useCallback(() => {
-    if (!name) {
-      setSnackbar({
-        open: true,
-        message: 'Merci de renseigner votre nom.',
-        severity: 'error'
-      });
-      return;
-    }
+  // Sauvegarde CRA optimisée
+  const handleSave = useCallback(async () => {
+    if (!ownerIdRef.current) return;
     if (hasInvalidCategory) {
       setSnackbar({
         open: true,
@@ -150,22 +197,53 @@ export default function AppContent() {
       return;
     }
     setError("");
-    localStorage.setItem(
-      `cra_sections_${name}_${month}`,
-      JSON.stringify({ categories, data })
-    );
-    setSaved(true);
-    setSnackbar({
-      open: true,
-      message: 'Compte rendu sauvegardé !',
-      severity: 'success'
-    });
-  }, [name, hasInvalidCategory, categories, data, month]);
-  const handleReset = useCallback(() => {
-    if (!name) {
+    try {
+      const [year, monthNum] = month.split("-").map(Number);
+      const dailyEntriesJSON = JSON.stringify({ categories, data });
+      if (craId) {
+        try {
+          await client.models.CRA.update({
+            id: craId,
+            dailyEntries: dailyEntriesJSON
+          }, { authMode: 'userPool' });
+        } catch (updateErr) {
+          console.error("Erreur lors de la mise à jour du CRA:", updateErr);
+          setSnackbar({
+            open: true,
+            message: 'Erreur lors de la mise à jour du CRA',
+            severity: 'error'
+          });
+          return;
+        }
+      } else {
+        await client.models.CRA.create({
+          owner: ownerIdRef.current!,
+          year,
+          month: monthNum,
+          dailyEntries: dailyEntriesJSON
+        }, { authMode: 'userPool' });
+      }
+      setSaved(true);
       setSnackbar({
         open: true,
-        message: 'Merci de renseigner votre nom.',
+        message: 'Compte rendu sauvegardé',
+        severity: 'success'
+      });
+      fetchCRA();
+    } catch (err: any) {
+      setError(err.message || 'Erreur lors de la sauvegarde du CRA');
+      setSnackbar({
+        open: true,
+        message: err.message || 'Erreur lors de la sauvegarde du CRA',
+        severity: 'error'
+      });
+    }
+  }, [hasInvalidCategory, categories, data, month, craId, fetchCRA]);
+  const handleReset = useCallback(() => {
+    if (!ownerIdRef.current) {
+      setSnackbar({
+        open: true,
+        message: 'Impossible de réinitialiser les données sans utilisateur connecté.',
         severity: 'error'
       });
       return;
@@ -184,7 +262,7 @@ export default function AppContent() {
       message: 'Données réinitialisées !',
       severity: 'success'
     });
-  }, [name, loadState]);
+  }, [loadState]);
   const handleExport = useCallback(() => {
     if (hasInvalidCategory) {
       setSnackbar({
@@ -196,7 +274,7 @@ export default function AppContent() {
     }
     setError("");
     exportExcel({
-      name,
+      name: userGivenName + " " + userFamilyName,
       month,
       days,
       categories,
@@ -207,10 +285,7 @@ export default function AppContent() {
       message: 'Export Excel généré avec succès !',
       severity: 'success'
     });
-  }, [hasInvalidCategory, name, month, days, categories, data]);
-  const handleNameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    setLocalName(e.target.value);
-  }, []);
+  }, [hasInvalidCategory, userGivenName, userFamilyName, month, days, categories, data]);
   const totalDays = getTotalWorkedDays();
   const businessDaysInMonth = getBusinessDaysInMonth();
   const tableRefs: Record<SectionKey, React.RefObject<HTMLDivElement | null>> = {
@@ -271,15 +346,6 @@ export default function AppContent() {
         ...handlers
       };
     }), [SECTION_LABELS, days, categories, data, createSectionHandlers, globalZoom, tableRefs, handleSyncScroll]);
-  const [userEmail, setUserEmail] = useState<string>("");
-  
-
-
-  useEffect(() => {
-    getCurrentUser().then(user => {
-      setUserEmail(user?.signInDetails?.loginId || user?.username || "");
-    }).catch(() => setUserEmail(""));
-  }, []);
 
   return (
     <Box sx={{ 
@@ -294,13 +360,6 @@ export default function AppContent() {
       overflow: isFullscreen ? 'auto' : 'visible'
     }}>
       <Navbar />
-      {userEmail && (
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', px: 4, mt: 1 }}>
-          <Typography variant="body2" sx={{ color: '#894991', fontWeight: 500 }}>
-            {userEmail}
-          </Typography>
-        </Box>
-      )}
       <Box
         sx={{
           width: isFullscreen ? "100%" : "95%",
@@ -317,14 +376,12 @@ export default function AppContent() {
         {!isFullscreen && (
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 4 }}>
             <Box sx={{ display: 'flex', gap: 3, alignItems: 'center' }}>
-              <TextField
-                label="Nom / Prénom"
-                value={localName}
-                onChange={handleNameChange}
-                sx={{ minWidth: 200 }}
-                placeholder="Votre nom"
-                size="small"
-              />
+              <Typography variant="body1" sx={{ minWidth: 200, fontWeight: 700, color: '#894991', fontSize: '1rem', letterSpacing: 0.5 }}>
+                {userFamilyName && userGivenName
+                  ? `${userGivenName} ${userFamilyName} `
+                  : <Skeleton variant="text" width={160} height={32} sx={{ bgcolor: '#eee', borderRadius: 1, display: 'inline-block' }} />
+                }
+              </Typography>
               <TextField
                 label="Mois"
                 type="month"
@@ -392,7 +449,7 @@ export default function AppContent() {
               <Button
                 variant="outlined"
                 startIcon={<RefreshIcon fontSize="small" />}
-                onClick={handleReset}
+                onClick={fetchCRA}
                 size="small"
                 sx={{
                   fontSize: 14,
@@ -404,7 +461,7 @@ export default function AppContent() {
                   '&:hover': { borderColor: '#f57c00', color: '#f57c00' }
                 }}
               >
-                Réinitialiser
+                Recharger
               </Button>
               <Button
                 variant="contained"
@@ -419,6 +476,7 @@ export default function AppContent() {
                   textTransform: 'none',
                   '&:hover': { backgroundColor: '#6a3a7a' }
                 }}
+                disabled={isLoadingCRA || !ownerIdRef.current}
               >
                 Sauvegarder
               </Button>
@@ -456,7 +514,7 @@ export default function AppContent() {
           }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
               <Typography variant="h6" sx={{ color: "#894991", fontWeight: 600 }}>
-                {name} - {month}
+                {userGivenName + " " + userFamilyName} - {month}
               </Typography>
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -525,9 +583,13 @@ export default function AppContent() {
             </Button>
           </Box>
         )}
-        {activityTableProps.map((props, index) => (
-          <ActivityTable key={SECTION_LABELS[index].key} {...props} />
-        ))}
+        {isLoadingCRA ? (
+          <Skeleton variant="rectangular" width="100%" height={300} sx={{ borderRadius: 2, my: 4 }} />
+        ) : (
+          activityTableProps.map((props, index) => (
+            <ActivityTable key={SECTION_LABELS[index].key} {...props} />
+          ))
+        )}
         {!isFullscreen && (
           <>
             <Box sx={{ 

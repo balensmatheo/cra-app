@@ -20,6 +20,8 @@ export default function Signin({ children }: { children: ReactNode }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
+  const [givenName, setGivenName] = useState('');
+  const [familyName, setFamilyName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -55,11 +57,21 @@ export default function Signin({ children }: { children: ReactNode }) {
 
   const handleSignUp = async () => {
     setLoading(true);
+    if (!givenName.trim() || !familyName.trim()) {
+      setError('Merci de renseigner votre prénom et votre nom.');
+      setLoading(false);
+      return;
+    }
     try {
       await signUp({
         username: email,
         password,
-        options: { userAttributes: { email } },
+        options: {
+          userAttributes: {
+            family_name: familyName,
+            given_name: givenName,
+          },
+        }
       });
       setForm('confirm');
       setError('');
@@ -130,10 +142,26 @@ export default function Signin({ children }: { children: ReactNode }) {
       <Box sx={formBoxSx}>
         {logoBlock}
         <Typography variant="h6" sx={{ color: '#894991', fontWeight: 600 }}>Créer un compte</Typography>
-        <TextField label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} fullWidth disabled={loading} />
-        <TextField label="Mot de passe" type="password" value={password} onChange={e => setPassword(e.target.value)} fullWidth disabled={loading} />
+        <TextField label="Prénom" value={givenName} onChange={e => setGivenName(e.target.value)} fullWidth disabled={loading} required />
+        <TextField label="Nom" value={familyName} onChange={e => setFamilyName(e.target.value)} fullWidth disabled={loading} required />
+        <TextField label="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} fullWidth disabled={loading} required />
+        <TextField label="Mot de passe" type="password" value={password} onChange={e => setPassword(e.target.value)} fullWidth disabled={loading} required />
         {error && <Typography color="error" sx={{ fontSize: 14 }}>{error}</Typography>}
-        <Button variant="contained" onClick={handleSignUp} sx={{ background: '#894991', '&:hover': { background: '#6a3a7a' }, fontWeight: 600, textTransform: 'none', width: '100%' }} disabled={loading}>
+        <Button
+          variant="contained"
+          onClick={handleSignUp}
+          sx={{
+            background: (!givenName.trim() || !familyName.trim() || !email.trim() || !password.trim() || loading) ? '#ccc' : '#894991',
+            color: (!givenName.trim() || !familyName.trim() || !email.trim() || !password.trim() || loading) ? '#888' : '#fff',
+            '&:hover': {
+              background: (!givenName.trim() || !familyName.trim() || !email.trim() || !password.trim() || loading) ? '#ccc' : '#6a3a7a',
+            },
+            fontWeight: 600,
+            textTransform: 'none',
+            width: '100%',
+          }}
+          disabled={loading || !givenName.trim() || !familyName.trim() || !email.trim() || !password.trim()}
+        >
           {loading ? <CircularProgress size={24} sx={{ color: '#fff' }} /> : "S'inscrire"}
         </Button>
         <Button variant="text" onClick={() => { setForm('signIn'); setError(''); }} sx={{ color: '#894991', textTransform: 'none', width: '100%' }} disabled={loading}>
