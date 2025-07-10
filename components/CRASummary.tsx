@@ -125,7 +125,6 @@ const CRASummary: React.FC<CRASummaryProps> = ({
           </Box>
         </Box>
       </Box>
-      {saved && <Typography sx={{ color: "green", ml: 3, fontWeight: 500 }}>Compte rendu sauvegardé !</Typography>}
       {error && <Typography sx={{ color: "red", mt: 2, fontWeight: 500 }}>{error}</Typography>}
     </>
   );
