@@ -13,7 +13,7 @@ const schema = a.schema({
     month: a.integer(),
     dailyEntries: a.string(), // JSON.stringify des données journalières
   })
-  //.authorization(allow => [allow.owner()]) // pour restreindre l'accès à chaque utilisateur
+  .authorization(allow => [allow.owner()]) // pour restreindre l'accès à chaque utilisateur
 });
 
 
@@ -21,6 +21,9 @@ export type Schema = ClientSchema<typeof schema>;
 
 export const data = defineData({
   schema,
+  authorizationModes: {
+    defaultAuthorizationMode: 'apiKey',
+   },
 });
 
 /*== STEP 2 ===============================================================
