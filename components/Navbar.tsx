@@ -9,15 +9,6 @@ import MenuIcon from '@mui/icons-material/Menu';
 import CRADrawer from './CRADrawer';
 import { useCRA } from '@/context/CRAContext';
 
-async function signout() {
-  try {
-    await signOut();
-    window.location.reload();
-  } catch (error) {
-    console.error("Erreur lors de la déconnexion :", error);
-  }
-}
-
 export default function Navbar() {
   const router = useRouter();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -49,9 +40,15 @@ export default function Navbar() {
     handleClose();
   };
 
-  const handleLogout = () => {
-    signout();
-    handleClose();
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      router.push('/signin');
+    } catch (error) {
+      console.error("Erreur lors de la déconnexion :", error);
+    } finally {
+      handleClose();
+    }
   };
 
   return (

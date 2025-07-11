@@ -12,7 +12,7 @@ import { useRouter } from 'next/navigation';
 import Image from "next/image";
 import CircularProgress from '@mui/material/CircularProgress';
 
-export default function Signin({ children }: { children: ReactNode }) {
+export default function Signin() {
   const router = useRouter();
   const [user, setUser] = useState<any>(null);
   const [checkingUser, setCheckingUser] = useState(true);
@@ -96,7 +96,7 @@ export default function Signin({ children }: { children: ReactNode }) {
   };
 
   if (user) {
-    return <>{children}</>;
+    return null;
   }
 
   // Facteur commun de style pour le conteneur du formulaire
