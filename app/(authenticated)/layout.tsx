@@ -13,8 +13,8 @@ export default function AuthenticatedLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  // Show navbar on main pages, but not on profile or other specific pages
-  const showNavbar = pathname === "/" || pathname.startsWith("/admin") || pathname.startsWith("/user");
+  // Show navbar on main pages and profile page
+  const showNavbar = pathname === "/" || pathname.startsWith("/admin") || pathname.startsWith("/user") || pathname === "/profile";
 
   return (
     <CRAProvider>

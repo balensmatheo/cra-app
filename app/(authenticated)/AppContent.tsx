@@ -304,28 +304,6 @@ export default function AppContent() {
           </Box>
         </Box>
       )}
-      {/* Bouton plein écran en mode normal */}
-      {!isFullscreen && (
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-          <Button
-            variant="outlined"
-            startIcon={<FullscreenIcon fontSize="small" />}
-            onClick={toggleFullscreen}
-            size="small"
-            sx={{
-              fontSize: 14,
-              px: 2,
-              py: 0.5,
-              borderColor: '#ccc',
-              color: '#666',
-              textTransform: 'none',
-              '&:hover': { borderColor: '#894991', color: '#894991' }
-            }}
-          >
-            Plein écran
-          </Button>
-        </Box>
-      )}
       {isLoading ? (
         <Skeleton variant="rectangular" width="100%" height={300} sx={{ borderRadius: 2, my: 4 }} />
       ) : (

@@ -58,6 +58,13 @@ export default function SigninContent({ searchParams }: SigninContentProps) {
     }
   };
 
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter' && !loading && email.trim() && password.trim()) {
+      event.preventDefault();
+      handleSignIn();
+    }
+  };
+
   if (user) {
     return null;
   }
@@ -75,6 +82,7 @@ export default function SigninContent({ searchParams }: SigninContentProps) {
         type="email"
         value={email}
         onChange={e => setEmail(e.target.value)}
+        onKeyDown={handleKeyDown}
         fullWidth
         disabled={loading}
         required
@@ -84,6 +92,7 @@ export default function SigninContent({ searchParams }: SigninContentProps) {
         type="password"
         value={password}
         onChange={e => setPassword(e.target.value)}
+        onKeyDown={handleKeyDown}
         fullWidth
         disabled={loading}
         required

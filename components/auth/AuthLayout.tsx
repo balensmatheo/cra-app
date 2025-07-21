@@ -15,7 +15,7 @@ export default function AuthLayout({ children, title }: AuthLayoutProps) {
     gap: 2,
     p: 4,
     maxWidth: 350,
-    margin: '100px auto',
+    margin: '0 auto',
     background: 'var(--background, #fff)',
     borderRadius: 4,
     boxShadow: '0 4px 24px rgba(137,73,145,0.08)',
