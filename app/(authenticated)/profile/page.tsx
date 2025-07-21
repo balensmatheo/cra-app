@@ -5,6 +5,9 @@ import Profile from "../../../components/Profile";
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
 
+// Force dynamic rendering to prevent static generation issues with auth session
+export const dynamic = 'force-dynamic';
+
 export default function ProfilePage() {
   const [user, setUser] = useState<{
     email: string;

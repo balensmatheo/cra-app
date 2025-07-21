@@ -11,6 +11,9 @@ import { Box, CircularProgress } from '@mui/material';
 
 Amplify.configure(outputs);
 
+// Force dynamic rendering to prevent static generation issues with auth checks
+export const dynamic = 'force-dynamic';
+
 export default function Home() {
   const router = useRouter();
   const [authChecked, setAuthChecked] = useState(false);

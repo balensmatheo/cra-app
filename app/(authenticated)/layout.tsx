@@ -4,6 +4,9 @@ import Box from "@mui/material/Box";
 import { CRAProvider } from "@/context/CRAContext";
 import { usePathname } from "next/navigation";
 
+// Force dynamic rendering to prevent static generation issues with usePathname
+export const dynamic = 'force-dynamic';
+
 export default function AuthenticatedLayout({
   children,
 }: {
