@@ -1,4 +1,11 @@
-import Signin from "@/components/Signin";
+"use client";
+
+import { Amplify } from 'aws-amplify';
+import outputs from '@/amplify_outputs.json';
+import '@aws-amplify/ui-react/styles.css';
+
+// Configure Amplify for auth pages
+Amplify.configure(outputs);
 
 export default function AuthLayout({
   children,
@@ -7,7 +14,6 @@ export default function AuthLayout({
 }) {
   return (
     <>
-      <Signin />
       {children}
     </>
   );
