@@ -6,6 +6,13 @@ import { signUp } from 'aws-amplify/auth';
 import { useRouter } from 'next/navigation';
 import CircularProgress from '@mui/material/CircularProgress';
 import AuthLayout from '@/components/auth/AuthLayout';
+import PasswordConstraints, { validatePassword } from '@/components/auth/PasswordConstraints';
+
+// Fonction de validation email
+const validateEmail = (email: string): boolean => {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+};
 
 export default function SignupPage() {
   const router = useRouter();
@@ -20,6 +27,16 @@ export default function SignupPage() {
     setLoading(true);
     if (!givenName.trim() || !familyName.trim()) {
       setError('Merci de renseigner votre prénom et votre nom.');
+      setLoading(false);
+      return;
+    }
+    if (!validateEmail(email)) {
+      setError('Veuillez saisir une adresse email valide.');
+      setLoading(false);
+      return;
+    }
+    if (!validatePassword(password)) {
+      setError('Le mot de passe ne respecte pas toutes les contraintes requises.');
       setLoading(false);
       return;
     }
@@ -78,21 +95,22 @@ export default function SignupPage() {
         disabled={loading}
         required
       />
+      <PasswordConstraints password={password} />
       {error && <Typography color="error" sx={{ fontSize: 14 }}>{error}</Typography>}
       <Button
         variant="contained"
         onClick={handleSignUp}
         sx={{
-          background: (!givenName.trim() || !familyName.trim() || !email.trim() || !password.trim() || loading) ? '#ccc' : '#894991',
-          color: (!givenName.trim() || !familyName.trim() || !email.trim() || !password.trim() || loading) ? '#888' : '#fff',
+          background: (!givenName.trim() || !familyName.trim() || !email.trim() || !validateEmail(email) || !password.trim() || !validatePassword(password) || loading) ? '#ccc' : '#894991',
+          color: (!givenName.trim() || !familyName.trim() || !email.trim() || !validateEmail(email) || !password.trim() || !validatePassword(password) || loading) ? '#888' : '#fff',
           '&:hover': {
-            background: (!givenName.trim() || !familyName.trim() || !email.trim() || !password.trim() || loading) ? '#ccc' : '#6a3a7a',
+            background: (!givenName.trim() || !familyName.trim() || !email.trim() || !validateEmail(email) || !password.trim() || !validatePassword(password) || loading) ? '#ccc' : '#6a3a7a',
           },
           fontWeight: 600,
           textTransform: 'none',
           width: '100%',
         }}
-        disabled={loading || !givenName.trim() || !familyName.trim() || !email.trim() || !password.trim()}
+        disabled={loading || !givenName.trim() || !familyName.trim() || !email.trim() || !validateEmail(email) || !password.trim() || !validatePassword(password)}
       >
         {loading ? <CircularProgress size={24} sx={{ color: '#fff' }} /> : "S'inscrire"}
       </Button>

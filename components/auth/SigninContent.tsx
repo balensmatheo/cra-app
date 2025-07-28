@@ -47,13 +47,74 @@ export default function SigninContent({ searchParams }: SigninContentProps) {
   }
 
   const handleSignIn = async () => {
+    console.log('🚀 DÉBUT DE LA CONNEXION pour:', email);
     setLoading(true);
+    setError('');
+    
     try {
-      await signIn({ username: email, password });
-      window.location.reload();
+      console.log('📞 Appel de signIn avec:', { username: email, password: '***' });
+      const result = await signIn({ username: email, password });
+      console.log('✅ SignIn terminé, résultat:', result);
+      
+      // Vérifier si l'utilisateur est vraiment connecté après signIn
+      try {
+        const currentUser = await getCurrentUser();
+        console.log('👤 Utilisateur actuel après signIn:', currentUser);
+        
+        // Si nous arrivons ici, l'utilisateur est connecté et confirmé
+        console.log('🎉 Utilisateur connecté et confirmé, rechargement de la page');
+        window.location.reload();
+        
+      } catch (userErr: any) {
+        console.log('⚠️ Erreur lors de la vérification de l\'utilisateur:', userErr);
+        
+        // Si getCurrentUser échoue après un signIn "réussi",
+        // c'est probablement que l'utilisateur n'est pas confirmé
+        console.log('🔄 UTILISATEUR NON CONFIRMÉ DÉTECTÉ - Redirection vers la page de confirmation');
+        router.push(`/confirm?email=${encodeURIComponent(email)}&from=signin`);
+        return;
+      }
+      
     } catch (err: any) {
-      setError(err.message);
+      console.log('=== ERREUR DE CONNEXION - DIAGNOSTIC COMPLET ===');
+      console.log('Type d\'erreur:', typeof err);
+      console.log('Erreur de connexion - name:', err.name);
+      console.log('Erreur de connexion - message:', err.message);
+      console.log('Erreur de connexion - code:', err.code);
+      console.log('Erreur de connexion - status:', err.status);
+      console.log('Erreur de connexion - statusCode:', err.statusCode);
+      console.log('Erreur de connexion - toString:', err.toString());
+      console.log('Erreur de connexion - JSON:', JSON.stringify(err, Object.getOwnPropertyNames(err)));
+      console.log('=== FIN DIAGNOSTIC ===');
+      
+      // Vérifications d'erreur standards
+      const errorString = err.toString().toLowerCase();
+      const errorMessage = (err.message || '').toLowerCase();
+      const errorName = (err.name || '').toLowerCase();
+      const errorCode = (err.code || '').toLowerCase();
+      
+      const isUserNotConfirmed =
+        err.name === 'UserNotConfirmedException' ||
+        err.code === 'UserNotConfirmedException' ||
+        errorMessage.includes('user is not confirmed') ||
+        errorMessage.includes('not confirmed') ||
+        errorMessage.includes('usernotconfirmedexception') ||
+        errorString.includes('usernotconfirmedexception') ||
+        errorName.includes('usernotconfirmed') ||
+        errorCode.includes('usernotconfirmed') ||
+        errorMessage.includes('unconfirmed') ||
+        errorString.includes('unconfirmed');
+      
+      if (isUserNotConfirmed) {
+        console.log('🔄 UTILISATEUR NON CONFIRMÉ DÉTECTÉ dans catch - Redirection vers la page de confirmation');
+        router.push(`/confirm?email=${encodeURIComponent(email)}&from=signin`);
+        return;
+      }
+      
+      console.log('❌ Erreur de connexion standard:', err.message || err.toString());
+      setError(err.message || err.toString());
     } finally {
+      console.log('🏁 FIN DE LA TENTATIVE DE CONNEXION');
       setLoading(false);
     }
   };
