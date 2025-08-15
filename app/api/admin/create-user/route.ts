@@ -14,6 +14,12 @@ function genTempPassword(length = 12): string {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
+    const fnUrl = process.env.ADMIN_CREATE_USER_URL;
+    if (fnUrl) {
+      const r = await fetch(fnUrl, { method:'POST', headers:{ 'Content-Type':'application/json' }, body: JSON.stringify(body) });
+      const text = await r.text();
+      return new NextResponse(text, { status: r.status, headers: { 'Content-Type': r.headers.get('Content-Type') || 'application/json' } });
+    }
     const email = (body.email as string | undefined)?.trim().toLowerCase();
     const groups = Array.isArray(body.groups) ? (body.groups as string[]) : [];
     if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {

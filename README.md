@@ -1,3 +1,11 @@
+## Variables d'environnement (prod)
+
+Pour la liste et création d'utilisateurs en production, configurez les URLs des Functions Amplify côté Next.js:
+
+- ADMIN_LIST_USERS_URL: URL HTTP de la function `admin-list-users`
+- ADMIN_CREATE_USER_URL: URL HTTP de la function `admin-create-user`
+
+Ces functions disposent des permissions IAM pour appeler Cognito. En local (npm run dev), l'app peut utiliser directement l'AWS SDK si vos credentials existent sur votre machine.
 # CRA App - Gestion des Comptes Rendus d'Activité
 
 ## 📋 Contexte
