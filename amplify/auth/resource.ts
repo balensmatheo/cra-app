@@ -1,5 +1,8 @@
 import { defineAuth } from '@aws-amplify/backend';
 import { postConfirmation } from "./post-confirmation/resource"
+import { listUsersFn } from '../admin/list-users/resource';
+import { createUserFn } from '../admin/create-user/resource';
+import { updateUserFn } from '../admin/update-user/resource';
 
 /**
  * Define and configure your auth resource
@@ -26,6 +29,22 @@ export const auth = defineAuth({
   },
   access: (allow) => [
     allow.resource(postConfirmation).to(["addUserToGroup"]),
+    // Grant admin management actions to our admin functions
+    allow.resource(listUsersFn).to([
+      'listUsers',
+      'listGroupsForUser',
+    ]),
+    allow.resource(createUserFn).to([
+      'createUser',
+      'addUserToGroup',
+    ]),
+    allow.resource(updateUserFn).to([
+      'addUserToGroup',
+      'removeUserFromGroup',
+      'enableUser',
+      'disableUser',
+      'listGroupsForUser',
+    ]),
   ],
 
 });
