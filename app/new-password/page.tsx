@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { Box, TextField, Button, Typography, Alert } from '@mui/material';
 import CircularProgress from '@mui/material/CircularProgress';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -7,7 +7,7 @@ import { signIn, confirmSignIn, updateUserAttributes } from 'aws-amplify/auth';
 import AuthLayout from '@/components/auth/AuthLayout';
 import PasswordConstraints, { validatePassword } from '@/components/auth/PasswordConstraints';
 
-export default function NewPasswordPage() {
+function NewPasswordContent() {
   const router = useRouter();
   const sp = useSearchParams();
   const [email, setEmail] = useState(sp.get('email') || '');
@@ -131,5 +131,17 @@ export default function NewPasswordPage() {
       </form>
       <Button variant="text" onClick={()=>router.push('/signin')} sx={{ color:'#894991', textTransform:'none', width:'100%' }}>Retour</Button>
     </AuthLayout>
+  );
+}
+
+export default function NewPasswordPage() {
+  return (
+    <Suspense fallback={
+      <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8f9fa' }}>
+        <CircularProgress size={48} sx={{ color: '#894991' }} />
+      </Box>
+    }>
+      <NewPasswordContent />
+    </Suspense>
   );
 }
