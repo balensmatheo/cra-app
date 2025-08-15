@@ -1,52 +1,27 @@
 "use client";
-
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { Box, TextField, Button, Typography, useTheme, IconButton, Snackbar, Alert } from "@mui/material";
-import SaveIcon from '@mui/icons-material/Save';
-import DescriptionIcon from '@mui/icons-material/Description';
-import DeleteIcon from '@mui/icons-material/Delete';
-import FullscreenIcon from '@mui/icons-material/Fullscreen';
-import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
-import ZoomInIcon from '@mui/icons-material/ZoomIn';
-import ZoomOutIcon from '@mui/icons-material/ZoomOut';
-import { fetchAuthSession } from 'aws-amplify/auth';
-import ActivityTable from "../../components/ActivityTable";
-import { exportExcel } from "../../utils/exportExcel";
-import { useDebounce } from "../../hooks/useDebounce";
-import CRAHeader from "@/components/CRAHeader";
-import CRASummary from "@/components/CRASummary";
-import { useCRAEngine } from "../../hooks/useCRAEngine";
-import { useCRA } from "@/context/CRAContext";
-import { useCRAData } from "@/hooks/useCRAData";
-import { type SectionKey } from "../../constants/categories";
-import { CATEGORY_OPTIONS, SECTION_LABELS, NAME_DEBOUNCE_DELAY } from "../../constants/ui";
-import { isFutureMonth, isDuplicateCategory } from "../../constants/validation";
-import type { AppProps } from 'next/app';
-import { generateClient } from "aws-amplify/data";
-import type { Schema } from "../../amplify/data/resource";
-import { getCurrentUser } from "aws-amplify/auth";
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
+import { getCurrentUser, fetchAuthSession } from 'aws-amplify/auth';
+import Box from '@mui/material/Box';
+import Button from '@mui/material/Button';
 import Skeleton from '@mui/material/Skeleton';
-import CircularProgress from '@mui/material/CircularProgress';
-
-const client = generateClient<Schema>();
-
-const initialEmptyState = {
-  categories: {
-    facturees: [{ id: 1, label: "" }],
-    non_facturees: [{ id: 1, label: "" }],
-    autres: [{ id: 1, label: "" }],
-  },
-  data: {
-    facturees: {},
-    non_facturees: {},
-    autres: {},
-  }
-};
-
+import Snackbar from '@mui/material/Snackbar';
+import Alert from '@mui/material/Alert';
+import CRAHeader from '@/components/CRAHeader';
+import ActivityTable from '@/components/ActivityTable';
+import TopKPI from '@/components/TopKPI';
+import { useCRA } from '@/context/CRAContext';
+import { useCraGrid } from '@/hooks/useCraGrid';
+import { CATEGORY_OPTIONS, SECTION_LABELS } from '@/constants/ui';
+import { type SectionKey } from '@/constants/categories';
+import { exportExcel } from '@/utils/exportExcel';
+import { getBusinessDaysCount } from '@/utils/businessDays';
+import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 
 export default function AppContent() {
-  const { selectedMonth, selectMonth } = useCRA();
+  const { selectedMonth, setMonthString, isFullscreen, setIsFullscreen, resolvedTargetSub } = useCRA();
+  const fullRef = useRef<HTMLDivElement | null>(null);
   const ownerIdRef = useRef<string | null>(null);
+
   const {
     categories,
     data,
@@ -55,255 +30,340 @@ export default function AppContent() {
     updateCategory,
     addCategory,
     deleteCategory,
+    status,
+    saveDraft,
+    validateCra,
+    closeCra,
+    reopenCra,
+    computeValidation,
+    readOnly,
     isLoading,
-    isSaving,
-    error,
-    setError,
-    snackbar,
-    setSnackbar,
-    fetchCRA,
-    handleSave,
-    resetState
-  } = useCRAData(ownerIdRef.current, selectedMonth);
-  
-  const theme = useTheme();
-  const [year, m] = selectedMonth.split("-").map(Number);
-  const days = useMemo(() => {
-    const date = new Date(year, m - 1, 1);
-    const days = [];
-    while (date.getMonth() === m - 1) {
-      days.push(new Date(date));
-      date.setDate(date.getDate() + 1);
-    }
-    return days;
-  }, [year, m]);
-  const craEngine = useCRAEngine(categories, data, days);
-  const { getRowTotal, getSectionTotal, getTotalWorkedDays, getBusinessDaysInMonth, canDeleteLastCategory } = craEngine;
-  const hasInvalidCategory = useMemo(() =>
-    Object.entries(categories).some(([section, cats]) =>
-      cats.some(cat => {
-        const row = data[section as SectionKey][cat.id] || {};
-        const hasData = Object.entries(row).some(([k, v]) => k !== 'comment' && v) || row.comment;
-        return hasData && !cat.label;
-      })
-    ), [categories, data]);
-  const [userGivenName, setUserGivenName] = useState("");
-  const [userFamilyName, setUserFamilyName] = useState("");
-  const [userEmail, setUserEmail] = useState<string>("");
-  const [isUserLoaded, setIsUserLoaded] = useState(false);
+    lastSavedAt,
+    resetAll,
+    isDirty,
+    pendingMatrix,
+    pendingComments,
+    isAdmin,
+    isSaving: isSavingCra,
+  } = useCraGrid(selectedMonth, resolvedTargetSub);
 
-  // Récupérer ownerId et infos utilisateur une seule fois
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' as 'success'|'error'|'info' });
+  const [userFamilyName, setUserFamilyName] = useState('');
+  const [userGivenName, setUserGivenName] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [reopening, setReopening] = useState(false);
+
+  // Sync horizontal scroll across the three tables
+  const tableContainersRef = useRef<Array<HTMLDivElement | null>>([]);
+  const isSyncingRef = useRef(false);
+  const registerTableRef = useCallback((index: number) => (el: HTMLDivElement | null) => {
+    tableContainersRef.current[index] = el;
+  }, []);
+  const handleSynchronizedScroll = useCallback((sourceIndex: number) => (e: React.UIEvent<HTMLDivElement>) => {
+    if (isSyncingRef.current) return;
+    const src = e.currentTarget as HTMLDivElement;
+    const targetScrollLeft = src.scrollLeft;
+    isSyncingRef.current = true;
+    requestAnimationFrame(() => {
+      tableContainersRef.current.forEach((el, idx) => {
+        if (!el || idx === sourceIndex) return;
+        if (el.scrollLeft !== targetScrollLeft) {
+          el.scrollLeft = targetScrollLeft;
+        }
+      });
+      requestAnimationFrame(() => { isSyncingRef.current = false; });
+    });
+  }, []);
+
   useEffect(() => {
-    fetchAuthSession().then(session => {
-      const payload = session.tokens?.idToken?.payload || {};
-      setUserGivenName(typeof payload.given_name === 'string' ? payload.given_name : "");
-      setUserFamilyName(typeof payload.family_name === 'string' ? payload.family_name : "");
-      setUserEmail(typeof payload.email === 'string' ? payload.email : "");
-      ownerIdRef.current = typeof payload.sub === 'string' ? payload.sub : null;
-      setIsUserLoaded(true);
-    });
+    (async () => {
+      try {
+        const user = await getCurrentUser();
+        ownerIdRef.current = (user as any)?.userId || null;
+        try {
+          const { tokens } = await fetchAuthSession();
+          const payload: any = tokens?.idToken?.payload ?? {};
+          const given = payload?.given_name || payload?.givenName || '';
+          const family = payload?.family_name || payload?.familyName || '';
+          if (typeof given === 'string') setUserGivenName(given);
+          if (typeof family === 'string') setUserFamilyName(family);
+        } catch {}
+      } catch {}
+    })();
   }, []);
 
-  const handleCellChange = useCallback((section: SectionKey, catId: number, date: string, value: string) => {
-    updateCell(section, catId, date, value);
-  }, [updateCell]);
-  const handleCategoryLabelChange = useCallback((section: SectionKey, catId: number, value: string) => {
-    updateCategory(section, catId, value);
-  }, [updateCategory]);
-  const handleCommentChange = useCallback((section: SectionKey, catId: number, value: string) => {
-    updateComment(section, catId, value);
-  }, [updateComment]);
-  const handleAddCategory = useCallback((section: SectionKey) => {
-    addCategory(section);
-  }, [addCategory]);
-  const handleDeleteCategory = useCallback((section: SectionKey, catId: number) => {
-    if (!canDeleteLastCategory(section)) {
-      setSnackbar({
-        open: true,
-        message: 'Impossible de supprimer la dernière ligne non vide',
-        severity: 'error'
-      });
-      return;
+  const days = useMemo(() => {
+    const [y, m] = selectedMonth.split('-').map(Number);
+    const arr: Date[] = [];
+    const d = new Date(y, m - 1, 1);
+    while (d.getMonth() === m - 1) {
+      arr.push(new Date(d));
+      d.setDate(d.getDate() + 1);
     }
-    deleteCategory(section, catId);
-  }, [deleteCategory, canDeleteLastCategory]);
-  const handleMonthChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const [year, monthValue] = e.target.value.split('-').map(Number);
-    selectMonth(monthValue - 1);
-  }, [selectMonth]);
-  const handleExport = useCallback(() => {
-    if (hasInvalidCategory) {
-      setSnackbar({
-        open: true,
-        message: "Une catégorie ne peut pas être vide si la ligne contient des données.",
-        severity: 'error'
+    return arr;
+  }, [selectedMonth]);
+
+  const sectionTotals = useMemo(() => {
+    const totals: Record<SectionKey, number> = { facturees: 0, non_facturees: 0, autres: 0 } as any;
+    (Object.keys(categories) as SectionKey[]).forEach(section => {
+      const rows = categories[section];
+      rows.forEach(r => {
+        const rowData = data[section][r.id] || {};
+        const sum = days.reduce((acc, d) => {
+          const v = rowData[d.toISOString().slice(0,10)];
+          const n = v ? parseFloat(v) : 0;
+          return acc + (isNaN(n) ? 0 : n);
+        }, 0);
+        totals[section] += sum;
       });
-      return;
+    });
+    return totals;
+  }, [categories, data, days]);
+
+  const businessDaysInMonth = useMemo(() => {
+    const [y, m] = selectedMonth.split('-').map(Number);
+    return getBusinessDaysCount(y, m - 1);
+  }, [selectedMonth]);
+
+  const invalidDays = useMemo(() => {
+    const set = new Set<string>();
+    days.forEach((d) => {
+      const dayKey = d.toISOString().slice(0,10);
+      let sum = 0;
+      (Object.keys(data) as SectionKey[]).forEach((section) => {
+        const rows = data[section] as Record<number, Record<string, string | undefined>>;
+        Object.values(rows).forEach((row) => {
+          const v = row?.[dayKey];
+          const n = v ? parseFloat(v) : 0;
+          if (!isNaN(n)) sum += n;
+        });
+      });
+      if (sum > 1.0001) set.add(dayKey);
+    });
+    return set;
+  }, [data, days]);
+
+  const totalsByDay = useMemo(() => {
+    const totals: Record<string, number> = {};
+    days.forEach((d) => {
+      const dayKey = d.toISOString().slice(0,10);
+      let sum = 0;
+      (Object.keys(data) as SectionKey[]).forEach((section) => {
+        const rows = data[section] as Record<number, Record<string, string | undefined>>;
+        Object.values(rows).forEach((row) => {
+          const v = row?.[dayKey];
+          const n = v ? parseFloat(v) : 0;
+          if (!isNaN(n)) sum += n;
+        });
+      });
+      totals[dayKey] = sum;
+    });
+    return totals;
+  }, [data, days]);
+
+  const handleMonthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    if (/^\d{4}-\d{2}$/.test(value)) {
+      setMonthString(value);
     }
-    setError(null);
-    exportExcel({
-      name: userGivenName + " " + userFamilyName,
-      month: selectedMonth,
-      days,
-      categories,
-      data
-    });
-    setSnackbar({
-      open: true,
-      message: 'Export Excel généré avec succès !',
-      severity: 'success'
-    });
-  }, [hasInvalidCategory, userGivenName, userFamilyName, selectedMonth, days, categories, data]);
-  const totalDays = getTotalWorkedDays();
-  const businessDaysInMonth = getBusinessDaysInMonth();
-  const tableRefs: Record<SectionKey, React.RefObject<HTMLDivElement | null>> = {
-    facturees: useRef<HTMLDivElement>(null),
-    non_facturees: useRef<HTMLDivElement>(null),
-    autres: useRef<HTMLDivElement>(null),
   };
-  const handleSyncScroll = useCallback((sectionKey: SectionKey) => (e: React.UIEvent<HTMLDivElement>) => {
-    const scrollLeft = e.currentTarget.scrollLeft;
-    Object.entries(tableRefs).forEach(([key, ref]) => {
-      if (key !== sectionKey && ref.current) {
-        ref.current.scrollLeft = scrollLeft;
-      }
-    });
-  }, [tableRefs]);
-  const [globalZoom, setGlobalZoom] = useState(1);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const allTableRefs = useRef<(HTMLDivElement | null)[]>([]);
-  const handleGlobalZoom = useCallback((newZoom: number) => {
-    setGlobalZoom(newZoom);
-    allTableRefs.current.forEach(ref => {
-      if (ref) {
-        ref.style.zoom = newZoom.toString();
-      }
-    });
+
+  // Fullscreen controls using the native Fullscreen API
+  const enterFullscreen = useCallback(() => {
+    const el: any = fullRef.current;
+    if (!el) return;
+    const req = el.requestFullscreen || (el as any).webkitRequestFullscreen || (el as any).msRequestFullscreen;
+    if (req) {
+      try { req.call(el); } catch {}
+    }
   }, []);
-  const toggleFullscreen = useCallback(() => {
-    setIsFullscreen(!isFullscreen);
-  }, [isFullscreen]);
-  const createSectionHandlers = useCallback((sectionKey: SectionKey) => ({
-    onCategoryChange: (catId: number, value: string) => handleCategoryLabelChange(sectionKey, catId, value),
-    onCellChange: (catId: number, date: string, value: string) => handleCellChange(sectionKey, catId, date, value),
-    onAddCategory: () => handleAddCategory(sectionKey),
-    onDeleteCategory: (catId: number) => handleDeleteCategory(sectionKey, catId),
-    onCommentChange: (catId: number, value: string) => handleCommentChange(sectionKey, catId, value),
-    getRowTotal: (catId: number) => getRowTotal(sectionKey, catId),
-    getSectionTotal: () => getSectionTotal(sectionKey),
-  }), [handleCategoryLabelChange, handleCellChange, handleAddCategory, handleDeleteCategory, handleCommentChange, getRowTotal, getSectionTotal]);
-  const activityTableProps = useMemo(() => 
-    SECTION_LABELS.map(({ key, label }, index) => {
-      const sectionKey = key as SectionKey;
-      const handlers = createSectionHandlers(sectionKey);
-      return {
-        sectionKey,
-        label,
-        days,
-        categories: categories[sectionKey],
-        data: data[sectionKey],
-        categoryOptions: CATEGORY_OPTIONS[sectionKey],
-        tableRef: (el: HTMLDivElement | null) => {
-          allTableRefs.current[index] = el;
-          tableRefs[sectionKey].current = el;
-          if (el) {
-            el.style.zoom = globalZoom.toString();
-          }
-        },
-        onTableScroll: handleSyncScroll(sectionKey),
-        ...handlers
-      };
-    }), [SECTION_LABELS, days, categories, data, createSectionHandlers, globalZoom, tableRefs, handleSyncScroll]);
+
+  const exitFullscreen = useCallback(() => {
+    const doc: any = document as any;
+    const exit = doc.exitFullscreen || (doc as any).webkitExitFullscreen || (doc as any).msExitFullscreen;
+    if (exit) {
+      try { exit.call(doc); } catch {}
+    }
+    setIsFullscreen(false);
+  }, [setIsFullscreen]);
+
+  const toggleFullscreenNative = useCallback(() => {
+    const d: any = document as any;
+    if (d.fullscreenElement || d.webkitFullscreenElement || d.msFullscreenElement) {
+      exitFullscreen();
+    } else {
+      enterFullscreen();
+    }
+  }, [enterFullscreen, exitFullscreen]);
+
+  useEffect(() => {
+    const onChange = () => {
+      const d: any = document as any;
+      const active = !!(d.fullscreenElement || d.webkitFullscreenElement || d.msFullscreenElement);
+      setIsFullscreen(active);
+    };
+    document.addEventListener('fullscreenchange', onChange);
+    document.addEventListener('webkitfullscreenchange', onChange as any);
+    document.addEventListener('MSFullscreenChange', onChange as any);
+    return () => {
+      document.removeEventListener('fullscreenchange', onChange);
+      document.removeEventListener('webkitfullscreenchange', onChange as any);
+      document.removeEventListener('MSFullscreenChange', onChange as any);
+    };
+  }, [setIsFullscreen]);
+
+  const getRowTotal = (section: SectionKey, rowId: number) => {
+    const rowData = data[section][rowId] || {};
+    return days.reduce((acc, d) => {
+      const v = rowData[d.toISOString().slice(0,10)];
+      const n = v ? parseFloat(v) : 0;
+      return acc + (isNaN(n) ? 0 : n);
+    }, 0);
+  };
+
+  const getSectionTotal = (section: SectionKey) => sectionTotals[section] || 0;
+
+  const handleSave = async () => {
+    await saveDraft();
+    setSnackbar({ open: true, message: 'CRA enregistré', severity: 'success' });
+  };
+
+  const { ok, errors } = computeValidation();
+  const disableSubmit = !ok || isDirty;
+  const disableSubmitReason = (() => {
+    if (isDirty) return "Enregistrez d'abord vos modifications.";
+    if (ok) return '';
+    const shown = errors.slice(0, 4);
+    const more = errors.length - shown.length;
+    const list = shown.map(e => `• ${e}`).join('  ');
+    return more > 0 ? `${list}  • +${more} autre(s)…` : list;
+  })();
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    const success = await validateCra();
+    setSnackbar({ open: true, message: success ? 'CRA validé' : 'Échec validation', severity: success ? 'success' : 'error' });
+    setSubmitting(false);
+  };
+
+  const handleCloseCra = async () => {
+    setClosing(true);
+    const success = await closeCra();
+    setSnackbar({ open: true, message: success ? 'CRA clôturé' : 'Échec clôture', severity: success ? 'success' : 'error' });
+    setClosing(false);
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    const name = [userGivenName, userFamilyName].filter(Boolean).join(' ') || 'Utilisateur';
+    await exportExcel({ name, month: selectedMonth, days, categories: categories as any, data: data as any });
+    setExporting(false);
+  };
+
+  const handleReopen = async () => {
+    setReopening(true);
+    const ok = await reopenCra();
+    setSnackbar({ open: true, message: ok ? 'CRA ré-ouvert pour modification' : 'Impossible de ré-ouvrir ce CRA', severity: ok ? 'success' : 'error' });
+    setReopening(false);
+  };
+
+  const activityTableProps = SECTION_LABELS.map(({ key, label }, idx) => ({
+    sectionKey: key,
+    label,
+    days,
+    categories: categories[key],
+    data: data[key] as any,
+    totalsByDay,
+    categoryOptions: CATEGORY_OPTIONS[key],
+    onCategoryChange: (rowId: number, value: string) => updateCategory(key, rowId, value),
+    onCellChange: (rowId: number, date: string, value: string) => updateCell(key, rowId, date, value),
+    onAddCategory: () => addCategory(key),
+    onDeleteCategory: (rowId: number) => deleteCategory(key, rowId),
+    getRowTotal: (rowId: number) => getRowTotal(key, rowId),
+    getSectionTotal: () => getSectionTotal(key),
+    onCommentChange: (rowId: number, value: string) => updateComment(key, rowId, value),
+    readOnly,
+    pendingMatrix: pendingMatrix[key],
+    pendingComments: pendingComments[key],
+    invalidDays,
+    tableRef: registerTableRef(idx),
+    onTableScroll: handleSynchronizedScroll(idx),
+  }));
 
   return (
-    <Box
+    <Box ref={fullRef}
       sx={{
-        width: isFullscreen ? "100%" : { xs: "100%", md: "95%" },
-        maxWidth: isFullscreen ? "100%" : 1900,
-        margin: isFullscreen ? 0 : { xs: 0, md: "40px auto 0 auto" },
-        background: "#fff",
+        width: '100%',
+        maxWidth: '100%',
+        margin: isFullscreen ? 0 : '0 auto',
+        background: '#fff',
         borderRadius: isFullscreen ? 0 : { xs: 0, md: 2 },
-        boxShadow: isFullscreen ? "none" : { xs: "none", md: "0 4px 24px rgba(0,0,0,0.08)" },
+        boxShadow: isFullscreen ? 'none' : { xs: 'none', md: '0 4px 24px rgba(0,0,0,0.08)' },
         p: isFullscreen ? 2 : { xs: 2, md: 4 },
-        minHeight: isFullscreen ? "100vh" : 400,
-        position: 'relative'
+        minHeight: isFullscreen ? '100vh' : 400,
+        position: 'relative',
       }}
     >
+      {isFullscreen && (
+        <Button
+          variant="outlined"
+          startIcon={<FullscreenExitIcon />}
+          onClick={exitFullscreen}
+          size="small"
+          sx={{
+            position: 'fixed',
+            top: 16,
+            right: 16,
+            borderColor: '#ccc',
+            color: '#666',
+            textTransform: 'none',
+            zIndex: 2000,
+            '&:hover': { borderColor: '#894991', color: '#894991' }
+          }}
+        >
+          Quitter le plein écran
+        </Button>
+      )}
+
+      {!isFullscreen && (
+        <TopKPI
+          facturees={sectionTotals.facturees}
+          businessDays={businessDaysInMonth}
+        />
+      )}
+
       {!isFullscreen && (
         <CRAHeader
           userFamilyName={userFamilyName}
           userGivenName={userGivenName}
           selectedMonth={selectedMonth}
           handleMonthChange={handleMonthChange}
-          fetchCRA={fetchCRA}
-          handleSave={() => handleSave(hasInvalidCategory)}
-          isLoadingCRA={isLoading || isSaving}
+          handleSave={handleSave}
+          handleSubmit={handleSubmit}
+          isLoadingCRA={isLoading}
           ownerId={ownerIdRef.current}
           handleExport={handleExport}
-          toggleFullscreen={toggleFullscreen}
+          toggleFullscreen={toggleFullscreenNative}
+          statusBadge={{ status, readOnly }}
+          validationState={{ ok, errors }}
+          lastSavedAt={lastSavedAt}
+          onResetAll={() => resetAll()}
+          dirty={isDirty}
+          disableSubmit={disableSubmit}
+          disableSubmitReason={disableSubmitReason}
+          onCloseCra={isAdmin ? handleCloseCra : undefined}
+          canClose={isAdmin && status === 'validated'}
+          saving={!!isSavingCra}
+          submitting={submitting}
+          exporting={exporting}
+          closing={closing}
+          reopening={reopening}
+          onReopen={status === 'validated' ? handleReopen : undefined}
         />
       )}
-      {/* Barre d'outils en mode plein écran */}
-      {isFullscreen && (
-        <Box sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          mb: 2,
-          p: 2,
-          background: '#f8f9fa',
-          borderRadius: 1,
-          border: '1px solid #e9ecef'
-        }}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Typography variant="h6" sx={{ color: "#894991", fontWeight: 600 }}>
-              {userGivenName + " " + userFamilyName} - {selectedMonth}
-            </Typography>
-          </Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <IconButton
-              size="small"
-              onClick={() => handleGlobalZoom(Math.max(0.3, globalZoom - 0.1))}
-              sx={{ color: '#666' }}
-              title="Zoom -"
-            >
-              <ZoomOutIcon fontSize="small" />
-            </IconButton>
-            <Typography variant="body2" sx={{ color: '#666', fontSize: '0.9rem', minWidth: '40px', textAlign: 'center' }}>
-              {Math.round(globalZoom * 100)}%
-            </Typography>
-            <IconButton
-              size="small"
-              onClick={() => handleGlobalZoom(Math.min(2, globalZoom + 0.1))}
-              sx={{ color: '#666' }}
-              title="Zoom +"
-            >
-              <ZoomInIcon fontSize="small" />
-            </IconButton>
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={() => handleGlobalZoom(1)}
-              sx={{
-                fontSize: '0.7rem',
-                borderColor: '#ccc',
-                color: '#666',
-                ml: 1
-              }}
-            >
-              Reset
-            </Button>
-            <IconButton
-              size="small"
-              onClick={toggleFullscreen}
-              sx={{ color: '#666', ml: 1 }}
-              title="Quitter le plein écran"
-            >
-              <FullscreenExitIcon fontSize="small" />
-            </IconButton>
-          </Box>
-        </Box>
-      )}
+
       {isLoading ? (
         <Skeleton variant="rectangular" width="100%" height={300} sx={{ borderRadius: 2, my: 4 }} />
       ) : (
@@ -311,25 +371,14 @@ export default function AppContent() {
           <ActivityTable key={SECTION_LABELS[index].key} {...props} />
         ))
       )}
-      {!isFullscreen && (
-        <CRASummary
-          totalDays={totalDays}
-          businessDaysInMonth={businessDaysInMonth}
-          saved={!isSaving && !error}
-          error={error || ""}
-        />
-      )}
+
       <Snackbar
         open={snackbar.open}
         autoHideDuration={4000}
         onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
-        <Alert
-          onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
-          severity={snackbar.severity}
-          sx={{ width: '100%' }}
-        >
+        <Alert severity={snackbar.severity} onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}>
           {snackbar.message}
         </Alert>
       </Snackbar>

@@ -10,9 +10,10 @@ type CategoryCellProps = {
   data: { [catId: number]: Record<string, string | undefined> };
   categoryOptions: string[];
   onCategoryChange: (catId: number, value: string) => void;
+  readOnly?: boolean;
 };
 
-const CategoryCell: FC<CategoryCellProps> = memo(({ value, record, data, categoryOptions, onCategoryChange }) => {
+const CategoryCell: FC<CategoryCellProps> = memo(({ value, record, data, categoryOptions, onCategoryChange, readOnly = false }) => {
   const rowData = useMemo(() => {
     return typeof record.id === 'number' ? data[record.id] || {} : {};
   }, [record.id, data]);
@@ -38,13 +39,34 @@ const CategoryCell: FC<CategoryCellProps> = memo(({ value, record, data, categor
       role="combobox"
       aria-expanded={false}
       aria-haspopup="listbox"
+      MenuProps={{
+        disableScrollLock: true,
+        anchorOrigin: { vertical: 'bottom', horizontal: 'left' },
+        transformOrigin: { vertical: 'top', horizontal: 'left' },
+        PaperProps: { sx: { maxHeight: 360 } },
+        keepMounted: true,
+      }}
       sx={{ 
         width: '100%',
+        maxWidth: '100%',
         fontWeight: 500, 
         borderColor: isInvalid ? 'red' : undefined, 
-        background: isInvalid ? '#fff0f0' : undefined 
+        background: isInvalid ? '#fff0f0' : undefined,
+        overflow: 'hidden',
+        '& .MuiInputBase-root': {
+          height: 32,
+          width: '100%',
+        },
+        '& .MuiSelect-select': {
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          display: 'block',
+          paddingRight: '24px'
+        }
       }}
       error={isInvalid === true}
+      disabled={readOnly}
     >
       <MenuItem value="">
         <em>Choisir une catégorie</em>

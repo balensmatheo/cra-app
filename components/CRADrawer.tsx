@@ -6,8 +6,9 @@ import { CheckCircle, HourglassEmpty, ReportProblem, HighlightOff } from '@mui/i
 interface CRADrawerProps {
   open: boolean;
   onClose: () => void;
-  submittedMonths: number[];
+  submittedMonths: number[]; // kept for backwards compatibility (months non-draft)
   onMonthSelect: (monthIndex: number) => void;
+  monthStatusMap?: Record<number,string>; // 1..12 -> status
 }
 
 const months = [
@@ -15,27 +16,21 @@ const months = [
   'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
 ];
 
-const CRADrawer: React.FC<CRADrawerProps> = ({ open, onClose, submittedMonths, onMonthSelect }) => {
+const CRADrawer: React.FC<CRADrawerProps> = ({ open, onClose, submittedMonths, onMonthSelect, monthStatusMap }) => {
   const currentDate = new Date();
   const currentMonthIndex = currentDate.getMonth();
   const currentDay = currentDate.getDate();
 
   const getStatus = (monthIndex: number) => {
-    const isSubmitted = submittedMonths.includes(monthIndex + 1);
+    const monthNum = monthIndex + 1;
+    const status = monthStatusMap?.[monthNum];
+    if (status === 'validated') return { icon: <CheckCircle color="success" fontSize="small" />, style: { color: '#2e7d32' } };
+    if (status === 'closed') return { icon: <CheckCircle color="success" fontSize="small" />, style: { color: '#6d1b7b' } };
+    if (status === 'saved') return { icon: <CheckCircle color="primary" fontSize="small" />, style: { color: '#1976d2' } };
+    // draft
     const isPastMonth = monthIndex < currentMonthIndex;
-
-    if (isSubmitted) {
-      return { icon: <CheckCircle color="success" fontSize="small" />, style: {} };
-    }
-    
-    if (isPastMonth && !isSubmitted) {
-      return { icon: <HighlightOff color="error" fontSize="small" />, style: { color: 'red' } };
-    }
-
-    if (monthIndex === currentMonthIndex && currentDay >= 20) {
-        return { icon: <ReportProblem color="warning" fontSize="small" />, style: {} };
-    }
-
+    if (isPastMonth) return { icon: <HighlightOff color="error" fontSize="small" />, style: { color: 'red' } };
+    if (monthIndex === currentMonthIndex && currentDay >= 20) return { icon: <ReportProblem color="warning" fontSize="small" />, style: {} };
     return { icon: <HourglassEmpty color="action" fontSize="small" />, style: {} };
   };
 
@@ -49,14 +44,14 @@ const CRADrawer: React.FC<CRADrawerProps> = ({ open, onClose, submittedMonths, o
             <Typography variant="subtitle1" fontWeight={600}>CRA de l'année</Typography>
         </Box>
         <Divider />
-        <List>
+  <List>
           {months.map((month, index) => {
             const { icon, style } = getStatus(index);
             return (
               <ListItem key={month} disablePadding>
                 <ListItemButton onClick={() => { onMonthSelect(index); onClose(); }} sx={{ minHeight: 36, px: 1.5 }}>
                   <ListItemIcon sx={{ minWidth: 32 }}>{icon}</ListItemIcon>
-                  <ListItemText primary={month} primaryTypographyProps={{ style, fontSize: 14 }} />
+      <ListItemText primary={month} primaryTypographyProps={{ style, fontSize: 14 }} secondary={monthStatusMap?.[index+1] && monthStatusMap[index+1] !== 'draft' ? monthStatusMap[index+1] : undefined} secondaryTypographyProps={{ fontSize: 10 }} />
                 </ListItemButton>
               </ListItem>
             );

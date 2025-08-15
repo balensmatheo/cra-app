@@ -24,6 +24,7 @@ type ActivityTableProps = {
   days: Date[];
   categories: Category[];
   data: { [catId: number]: Record<string, string | undefined> };
+  totalsByDay: Record<string, number>;
   categoryOptions: string[];
   onCategoryChange: (catId: number, value: string) => void;
   onCellChange: (catId: number, date: string, value: string) => void;
@@ -34,6 +35,10 @@ type ActivityTableProps = {
   onCommentChange: (catId: number, value: string) => void;
   tableRef?: (el: HTMLDivElement | null) => void;
   onTableScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
+  readOnly?: boolean;
+  invalidDays?: Set<string>;
+  pendingMatrix?: Record<number, Record<string, boolean>>; // rowId->date->pending
+  pendingComments?: Record<number, boolean>;
 };
 
 
@@ -45,6 +50,7 @@ export default function ActivityTable({
   categories,
   data,
   categoryOptions,
+  totalsByDay,
   onCategoryChange,
   onCellChange,
   onAddCategory,
@@ -54,6 +60,10 @@ export default function ActivityTable({
   onCommentChange,
   tableRef,
   onTableScroll,
+  readOnly = false,
+  invalidDays,
+  pendingMatrix,
+  pendingComments,
 }: ActivityTableProps) {
   // Décider si on utilise la virtualisation (plus de 30 lignes)
   const shouldVirtualize = categories.length > VIRTUALIZATION_THRESHOLD;
@@ -67,6 +77,7 @@ export default function ActivityTable({
         days={days}
         categories={categories}
         data={data}
+  totalsByDay={totalsByDay}
         categoryOptions={categoryOptions}
         onCategoryChange={onCategoryChange}
         onCellChange={onCellChange}
@@ -77,6 +88,8 @@ export default function ActivityTable({
         onCommentChange={onCommentChange}
         tableRef={tableRef}
         onTableScroll={onTableScroll}
+        readOnly={readOnly}
+  invalidDays={invalidDays}
       />
     );
   }
@@ -104,28 +117,28 @@ export default function ActivityTable({
   const dayHeaders = useMemo(() => 
     days.map((d) => (
       <TableCell key={d.toISOString().slice(0, 10)} align="center" sx={{ 
-        px: 0.5, 
-        width: '70px', 
-        minWidth: '70px',
-        maxWidth: '70px',
+        px: 0, 
+        width: '48px', 
+        minWidth: '48px',
+        maxWidth: '48px',
         backgroundColor: '#f8f9fa',
         borderBottom: '2px solid #e9ecef',
         fontWeight: 600,
-        fontSize: '0.875rem',
+        fontSize: '0.75rem',
         color: '#495057',
         textTransform: 'uppercase',
-        letterSpacing: '0.5px'
+        letterSpacing: '0.25px'
       }}>
-        <div style={{ fontSize: 12, fontWeight: 600 }}>
+        <div style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.1 }}>
           {d.getDate()}<br />
-          <span style={{ fontSize: 10, color: '#6c757d' }}>{d.toLocaleDateString("fr-FR", { weekday: "short" })}</span>
+          <span style={{ fontSize: 9, color: '#6c757d' }}>{d.toLocaleDateString('fr-FR', { weekday: 'narrow' })}</span>
         </div>
       </TableCell>
     )), [days]);
 
   // Memoize les lignes de données
   const tableRows = useMemo(() => 
-    categories.map((cat, index) => (
+  categories.map((cat, index) => (
       <ActivityRow
         key={`${sectionKey}-${cat.id}`}
         sectionKey={sectionKey}
@@ -134,12 +147,17 @@ export default function ActivityTable({
         days={days}
         data={data}
         categoryOptions={categoryOptions}
+        totalsByDay={totalsByDay}
         onCategoryChange={handleCategoryChange}
         onCellChange={handleCellChange}
         onCommentChange={handleCommentChange}
         onDeleteCategory={handleDeleteCategory}
         getRowTotal={getRowTotal}
         categoriesLength={categories.length}
+        readOnly={readOnly}
+  invalidDays={invalidDays}
+        pendingMatrix={pendingMatrix}
+        pendingComments={pendingComments}
       />
     )), [sectionKey, categories, days, data, categoryOptions, handleCategoryChange, handleCellChange, handleCommentChange, handleDeleteCategory, getRowTotal]);
 
@@ -181,7 +199,7 @@ export default function ActivityTable({
         </Typography>
       </Box>
 
-      <TableContainer 
+  <TableContainer 
         ref={handleTableRef} 
         onScroll={onTableScroll}
         sx={{ 
@@ -200,12 +218,13 @@ export default function ActivityTable({
           },
           '& .MuiTable-root': {
             tableLayout: 'fixed',
-            width: 'auto',
-            minWidth: `${200 + 250 + (days.length * 70) + 80}px`,
+            width: `${200 + 200 + (days.length * 48) + 72 + 44}px`,
+            minWidth: `${200 + 200 + (days.length * 48) + 72 + 44}px`,
             '@media (max-width: 768px)': {
-              minWidth: `${150 + 200 + (days.length * 60) + 70}px`,
+              minWidth: `${200 + 200 + (days.length * 46) + 72 + 44}px`,
             }
           },
+          // no extra right padding needed without sticky right columns
           '&::-webkit-scrollbar': {
             width: '8px',
             height: '8px',
@@ -223,12 +242,22 @@ export default function ActivityTable({
           },
         }}
       >
-        <Table sx={{ tableLayout: 'fixed', width: 'auto' }}>
-          <TableHead>
+    <Table sx={{ tableLayout: 'fixed', width: 'inherit', '& th, & td': { boxSizing: 'border-box' } }}>
+      <colgroup>
+      <col style={{ width: '200px' }} />
+            <col style={{ width: '200px' }} />
+            {days.map((_, i) => (
+              <col key={`day-col-${i}`} style={{ width: '48px' }} />
+            ))}
+            <col style={{ width: '72px' }} />
+            <col style={{ width: '44px' }} />
+          </colgroup>
+      <TableHead sx={{ position: 'sticky', top: 0, zIndex: 3, backgroundColor: '#f8f9fa' }}>
             <TableRow sx={{ backgroundColor: '#f8f9fa' }}>
               <TableCell sx={{ 
                 width: '200px', 
                 minWidth: '200px',
+                maxWidth: '200px',
                 backgroundColor: '#f8f9fa',
                 borderBottom: '2px solid #e9ecef',
                 borderRight: '1px solid #e9ecef',
@@ -236,13 +265,14 @@ export default function ActivityTable({
                 fontSize: '0.875rem',
                 color: '#495057',
                 textTransform: 'uppercase',
-                letterSpacing: '0.5px'
+        letterSpacing: '0.5px'
               }}>
                 Catégorie
               </TableCell>
               <TableCell sx={{ 
-                width: '250px', 
-                minWidth: '250px',
+                width: '200px', 
+                minWidth: '200px',
+                maxWidth: '200px',
                 backgroundColor: '#f8f9fa',
                 borderBottom: '2px solid #e9ecef',
                 borderRight: '1px solid #e9ecef',
@@ -250,37 +280,35 @@ export default function ActivityTable({
                 fontSize: '0.875rem',
                 color: '#495057',
                 textTransform: 'uppercase',
-                letterSpacing: '0.5px'
+        letterSpacing: '0.5px'
               }}>
-                Détails / Commentaires
+                DETAILS
               </TableCell>
               {dayHeaders}
               <TableCell align="center" sx={{ 
-                width: '80px', 
-                minWidth: '80px',
+                width: '72px', 
+                minWidth: '72px',
                 backgroundColor: '#f8f9fa',
                 borderBottom: '2px solid #e9ecef',
                 borderRight: '1px solid #e9ecef',
                 fontWeight: 600,
-                fontSize: '0.875rem',
+                fontSize: '0.8rem',
                 color: '#495057',
                 textTransform: 'uppercase',
-                letterSpacing: '0.5px'
+                letterSpacing: '0.25px',
+                
               }}>
                 Total
               </TableCell>
               <TableCell align="center" sx={{ 
-                width: '60px', 
-                minWidth: '60px',
+                width: '44px', 
+                minWidth: '44px',
+                maxWidth: '44px',
+                p: 0,
                 backgroundColor: '#f8f9fa',
-                borderBottom: '2px solid #e9ecef',
-                fontWeight: 600,
-                fontSize: '0.875rem',
-                color: '#495057',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px'
+                borderBottom: '2px solid #e9ecef'
               }}>
-                Action
+                {/* empty header for compact action column */}
               </TableCell>
             </TableRow>
           </TableHead>
@@ -294,10 +322,10 @@ export default function ActivityTable({
                 width: '200px',
                 borderRight: '1px solid #e9ecef'
               }}>
-                <Tooltip title="Ajouter une nouvelle ligne" arrow>
+        <Tooltip title={readOnly ? 'Lecture seule' : 'Ajouter une nouvelle ligne'} arrow>
                   <IconButton
                     color="primary"
-                    onClick={onAddCategory}
+          onClick={readOnly ? undefined : onAddCategory}
                     aria-label="Ajouter une nouvelle ligne"
                     sx={{
                       background: 'linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)',
@@ -313,12 +341,13 @@ export default function ActivityTable({
                       }
                     }}
                     size="small"
+          disabled={readOnly}
                   >
                     <AddIcon fontSize="small" sx={{ color: '#894991' }} />
                   </IconButton>
                 </Tooltip>
               </TableCell>
-              <TableCell colSpan={days.length + 2} sx={{ border: 'none' }}></TableCell>
+              <TableCell colSpan={days.length + 3} sx={{ border: 'none' }}></TableCell>
             </TableRow>
           </TableBody>
         </Table>

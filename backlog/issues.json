@@ -1,0 +1,173 @@
+[
+  {
+    "number": 1,
+    "title": "ISSUE 01 — Gen2 Data: modèles CRA + règles d’accès",
+    "labels": ["type:data", "priority:P1", "area:auth"],
+    "dependencies": [],
+    "tasks": [
+      "Ajouter modèles UserProfile, Category, SpecialDay, Cra, CraEntry",
+      "Définir relations et enums",
+      "Configurer règles auth (authenticated read, owner CRUD, ADMINS CRUD)",
+      "Exporter Schema & data",
+      "Vérifier build Amplify"
+    ],
+    "acceptance": [
+      "User USERS lit tous les CRA/entries",
+      "User USERS ne modifie que ses CRA/entries",
+      "Admin CRUD global",
+      "Category/SpecialDay/UserProfile lecture globale, CRUD admin"
+    ]
+  },
+  {
+    "number": 2,
+    "title": "ISSUE 02 — Redirection post-login vers CRA courant",
+    "labels": ["type:ux", "priority:P1", "area:ui"],
+    "dependencies": [1],
+    "tasks": [
+      "Point d'entrée post-auth",
+      "Calcul mois courant YYYY-MM",
+      "Redirect / vers /cra/<month>?user=me",
+      "Préserver deep link"
+    ],
+    "acceptance": ["Connexion standard => CRA courant", "Deep link conservé"]
+  },
+  {
+    "number": 3,
+    "title": "ISSUE 03 — Saisie CRA: Enregistrer vs Valider + validation + read-only",
+    "labels": ["type:feat", "priority:P1", "area:ui"],
+    "dependencies": [1,7,8],
+  "status": "done",
+  "progress": "UI (enregistrer/valider), validations (somme=1, couverture jours ouvrés, commentaire conditionnel), read-only owner/admin, double-lock backend (status re-check avant mutation, persistEntries, reset, création CRA).",
+  "tasks": [
+      "Boutons Enregistrer/Valider + badge état",
+      "Mode read-only non-owner non-admin ou closed",
+      "Validation somme journalière=1",
+      "Validation nb jours saisis == ouvrés",
+      "Commentaire obligatoire selon catégorie kind",
+      "Status -> validated si OK",
+      "Protection backend"
+    ],
+    "acceptance": ["Valider bloqué si règles KO", "Non-owner non-admin ne peut éditer"]
+  },
+  {
+    "number": 4,
+    "title": "ISSUE 04 — Mobile: optimisation responsive & densification",
+    "labels": ["type:ux", "priority:P2", "area:ui"],
+    "dependencies": [3,13],
+    "tasks": ["Table compacte", "Colonnes sticky", "Overflow-x contrôlé", "Barre action ou FAB", "Lighthouse >=90"],
+    "acceptance": ["Pas de scroll horizontal involontaire", "Actions accessibles pouce"]
+  },
+  {
+    "number": 5,
+    "title": "ISSUE 05 — Onglet Congés + auto-remplissage CRA",
+    "labels": ["type:feat", "priority:P1", "area:ui"],
+    "dependencies": [1,3,7,8],
+  "status": "done",
+  "progress": "Page /conges + ajout unique/plage, auto-fill CRA (val=1), suppression réciproque, bandeau info, idempotence renforcée (ensureLeaveDay).",
+  "tasks": [
+      "Page /conges",
+      "Form date unique/plage",
+      "Créer entries auto (value=1)",
+      "Suppression retire entries",
+      "Bandeau info CRA",
+      "Idempotence"
+    ],
+    "acceptance": ["Création congé remplit CRA", "Suppression retire entrées"]
+  },
+  {
+    "number": 6,
+    "title": "ISSUE 06 — Admin: gestion des utilisateurs",
+    "labels": ["type:admin", "priority:P1", "area:auth"],
+    "dependencies": [1],
+  "status": "done",
+  "progress": "Page /admin/users (UserProfile) + champs active/updatedBy. Ajout Lambdas admin-list-users & admin-update-user (Cognito) – intégration front encore à finaliser (routes API placeholder).",
+  "tasks": ["Page /admin/users", "Lambda admin Cognito", "Endpoints sécurisés", "Actions activer/désactiver/assigner groupes", "Trace updatedBy/updatedAt"],
+  "acceptance": ["Admin modifie groupe", "Traçabilité mise à jour"]
+  },
+  {
+    "number": 7,
+    "title": "ISSUE 07 — Admin: gestion des catégories",
+    "labels": ["type:admin", "priority:P1", "area:data"],
+    "dependencies": [1],
+  "status": "done",
+  "progress": "CRUD + toggle active + suppression protégée (vérif CraEntry). Broadcast event 'cra:categories-updated' pour rafraîchissement dynamique règles commentaire.",
+  "tasks": ["Page /admin/categories", "CRUD + active toggle", "Empêcher suppression si utilisée", "Règle commentaire dynamique"],
+    "acceptance": ["Changement kind reflète contrainte commentaire"]
+  },
+  {
+    "number": 8,
+    "title": "ISSUE 08 — Admin: calendrier des jours spéciaux",
+    "labels": ["type:admin", "priority:P1", "area:data"],
+    "dependencies": [1,3],
+  "status": "done",
+  "progress": "CRUD + broadcast 'cra:special-days-updated' => rafraîchissement immédiat businessDays sur interface; affichage scope user/global différencié.",
+  "tasks": ["Page /admin/special-days", "CRUD", "Recalcul jours ouvrés", "Scope user/global"],
+    "acceptance": ["Ajout férié réduit quota ouvrés immédiatement"]
+  },
+  {
+    "number": 9,
+    "title": "ISSUE 09 — Admin: clôture mensuelle",
+    "labels": ["type:admin", "priority:P1", "area:data"],
+    "dependencies": [1,3],
+  "status": "done",
+  "progress": "Bouton Clôturer (admin) visible sur CRA validé, transition validated->closed via closeCra() (backend guard déjà en place), badge état 'Clôturé' + lecture seule renforcée.",
+  "tasks": ["Transition validated->closed", "UI toggle", "Blocage édition backend", "Badge Clôturé"],
+  "acceptance": ["CRA closed non modifiable"]
+  },
+  {
+    "number": 10,
+    "title": "ISSUE 10 — Admin: modifier le CRA d’un collaborateur",
+    "labels": ["type:admin", "priority:P1", "area:ui"],
+    "dependencies": [1,3,9],
+    "tasks": ["Mode override admin", "Sélecteur utilisateur", "Indicateur Mode Admin", "Respect closed"],
+    "acceptance": ["Admin édite CRA autrui"]
+  },
+  {
+    "number": 11,
+    "title": "ISSUE 11 — Reporting Dashboards + Export Excel",
+    "labels": ["type:reporting", "priority:P1", "area:api"],
+    "dependencies": [1],
+    "tasks": ["Routes dash1/dash2", "Agrégation", "Excel export", "Pagination future"],
+    "acceptance": ["Export dash1 & dash2 OK"]
+  },
+  {
+    "number": 12,
+    "title": "ISSUE 12 — Reporting: état des saisies fin de mois",
+    "labels": ["type:reporting", "priority:P1", "area:api"],
+    "dependencies": [1,3,8,9],
+    "tasks": ["Route status", "Calcul jours ouvrés", "Synthèse par user", "Export CSV/XLSX", "Page /admin/reporting"],
+    "acceptance": ["Tableau exact (scénarios statut)"]
+  },
+  {
+    "number": 13,
+    "title": "ISSUE 13 — Export Excel vue utilisateur",
+    "labels": ["type:feat", "priority:P1", "area:ui"],
+    "dependencies": [3,11],
+    "tasks": ["Bouton export", "Endpoint export CRA individuel", "Workbook récap + détails"],
+    "acceptance": ["Fichier téléchargé correct"]
+  },
+  {
+    "number": 14,
+    "title": "ISSUE 14 — Nettoyage UX: bouton Recharger",
+    "labels": ["type:ux", "priority:P2", "area:ui"],
+    "dependencies": [3],
+    "tasks": ["Audit utilité", "Retrait ou renommage + modal", "Test réinitialisation"],
+    "acceptance": ["Action claire sans ambiguïté"]
+  },
+  {
+    "number": 15,
+    "title": "ISSUE 15 — Seeds + Tests d’accès",
+    "labels": ["type:data", "priority:P2", "area:auth"],
+    "dependencies": [1,9],
+    "tasks": ["Script seed catégories/jours spéciaux", "Doc exécution", "Tests accès USERS vs ADMINS", "Test CRA closed"],
+    "acceptance": ["Seeds idempotents", "Accès respectés"]
+  },
+  {
+    "number": 16,
+    "title": "BONUS UX — Récap sticky + tables serrées",
+    "labels": ["type:ux", "priority:P2", "area:ui"],
+    "dependencies": [3,4,8],
+    "tasks": ["Section sticky résumé", "Densité table ajustée", "Compatibilité mobile"],
+    "acceptance": ["Récap toujours visible"]
+  }
+]

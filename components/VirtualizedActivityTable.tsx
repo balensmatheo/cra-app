@@ -24,6 +24,7 @@ type VirtualizedActivityTableProps = {
   days: Date[];
   categories: Category[];
   data: { [catId: number]: Record<string, string | undefined> };
+  totalsByDay: Record<string, number>;
   categoryOptions: string[];
   onCategoryChange: (catId: number, value: string) => void;
   onCellChange: (catId: number, date: string, value: string) => void;
@@ -34,6 +35,8 @@ type VirtualizedActivityTableProps = {
   onCommentChange: (catId: number, value: string) => void;
   tableRef?: (el: HTMLDivElement | null) => void;
   onTableScroll?: (e: React.UIEvent<HTMLDivElement>) => void;
+  readOnly?: boolean;
+  invalidDays?: Set<string>;
 };
 
 
@@ -44,6 +47,7 @@ const VirtualizedActivityTable: FC<VirtualizedActivityTableProps> = ({
   days,
   categories,
   data,
+  totalsByDay,
   categoryOptions,
   onCategoryChange,
   onCellChange,
@@ -54,6 +58,8 @@ const VirtualizedActivityTable: FC<VirtualizedActivityTableProps> = ({
   onCommentChange,
   tableRef,
   onTableScroll,
+  readOnly = false,
+  invalidDays,
 }) => {
   const localTableRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<List>(null);
@@ -79,21 +85,21 @@ const VirtualizedActivityTable: FC<VirtualizedActivityTableProps> = ({
   const dayHeaders = useMemo(() => 
     days.map((d) => (
       <TableCell key={d.toISOString().slice(0, 10)} align="center" sx={{ 
-        px: 0.5, 
-        width: '70px', 
-        minWidth: '70px',
-        maxWidth: '70px',
-        backgroundColor: '#f8f9fa',
-        borderBottom: '2px solid #e9ecef',
+        px: 0, 
+        width: '48px', 
+        minWidth: '48px',
+        maxWidth: '48px',
+  backgroundColor: '#f8f9fa',
+  borderBottom: '2px solid #e9ecef',
         fontWeight: 600,
-        fontSize: '0.875rem',
+        fontSize: '0.75rem',
         color: '#495057',
         textTransform: 'uppercase',
-        letterSpacing: '0.5px'
+        letterSpacing: '0.25px'
       }}>
-        <div style={{ fontSize: 12, fontWeight: 600 }}>
+        <div style={{ fontSize: 10, fontWeight: 600, lineHeight: 1.1 }}>
           {d.getDate()}<br />
-          <span style={{ fontSize: 10, color: '#6c757d' }}>{d.toLocaleDateString("fr-FR", { weekday: "short" })}</span>
+          <span style={{ fontSize: 9, color: '#6c757d' }}>{d.toLocaleDateString('fr-FR', { weekday: 'narrow' })}</span>
         </div>
       </TableCell>
     )), [days]);
@@ -111,6 +117,7 @@ const VirtualizedActivityTable: FC<VirtualizedActivityTableProps> = ({
           index={index}
           days={days}
           data={data}
+          totalsByDay={totalsByDay}
           categoryOptions={categoryOptions}
           onCategoryChange={handleCategoryChange}
           onCellChange={handleCellChange}
@@ -118,10 +125,12 @@ const VirtualizedActivityTable: FC<VirtualizedActivityTableProps> = ({
           onDeleteCategory={handleDeleteCategory}
           getRowTotal={getRowTotal}
           categoriesLength={categories.length}
+          readOnly={readOnly}
+          invalidDays={invalidDays}
         />
       </div>
     );
-  }, [sectionKey, categories, days, data, categoryOptions, handleCategoryChange, handleCellChange, handleCommentChange, handleDeleteCategory, getRowTotal]);
+  }, [sectionKey, categories, days, data, totalsByDay, categoryOptions, handleCategoryChange, handleCellChange, handleCommentChange, handleDeleteCategory, getRowTotal, readOnly, invalidDays]);
 
   // Appeler la fonction de ref pour enregistrer la référence
   useEffect(() => {
@@ -183,10 +192,10 @@ const VirtualizedActivityTable: FC<VirtualizedActivityTableProps> = ({
           },
           '& .MuiTable-root': {
             tableLayout: 'fixed',
-            width: 'auto',
-            minWidth: `${200 + 250 + (days.length * 70) + 80}px`,
+            width: `${200 + 200 + (days.length * 48) + 72 + 44}px`,
+            minWidth: `${200 + 200 + (days.length * 48) + 72 + 44}px`,
             '@media (max-width: 768px)': {
-              minWidth: `${150 + 200 + (days.length * 60) + 70}px`,
+              minWidth: `${200 + 200 + (days.length * 46) + 72 + 44}px`,
             }
           },
           '&::-webkit-scrollbar': {
@@ -206,12 +215,22 @@ const VirtualizedActivityTable: FC<VirtualizedActivityTableProps> = ({
           },
         }}
       >
-        <Table sx={{ tableLayout: 'fixed', width: 'auto' }}>
-          <TableHead>
+  <Table sx={{ tableLayout: 'fixed', width: 'inherit', '& th, & td': { boxSizing: 'border-box' } }}>
+          <colgroup>
+            <col style={{ width: '200px' }} />
+            <col style={{ width: '200px' }} />
+            {days.map((_, i) => (
+              <col key={`v-day-col-${i}`} style={{ width: '48px' }} />
+            ))}
+            <col style={{ width: '72px' }} />
+            <col style={{ width: '44px' }} />
+          </colgroup>
+      <TableHead sx={{ position: 'sticky', top: 0, zIndex: 3, backgroundColor: '#f8f9fa' }}>
             <TableRow sx={{ backgroundColor: '#f8f9fa' }}>
-              <TableCell sx={{ 
-                width: '200px', 
-                minWidth: '200px',
+      <TableCell sx={{ 
+    width: '200px', 
+    minWidth: '200px',
+    maxWidth: '200px',
                 backgroundColor: '#f8f9fa',
                 borderBottom: '2px solid #e9ecef',
                 borderRight: '1px solid #e9ecef',
@@ -223,9 +242,10 @@ const VirtualizedActivityTable: FC<VirtualizedActivityTableProps> = ({
               }}>
                 Catégorie
               </TableCell>
-              <TableCell sx={{ 
-                width: '250px', 
-                minWidth: '250px',
+      <TableCell sx={{ 
+  width: '200px', 
+  minWidth: '200px',
+  maxWidth: '200px',
                 backgroundColor: '#f8f9fa',
                 borderBottom: '2px solid #e9ecef',
                 borderRight: '1px solid #e9ecef',
@@ -235,35 +255,32 @@ const VirtualizedActivityTable: FC<VirtualizedActivityTableProps> = ({
                 textTransform: 'uppercase',
                 letterSpacing: '0.5px'
               }}>
-                Détails / Commentaires
+                DETAILS
               </TableCell>
               {dayHeaders}
               <TableCell align="center" sx={{ 
-                width: '80px', 
-                minWidth: '80px',
+                width: '72px', 
+                minWidth: '72px',
                 backgroundColor: '#f8f9fa',
                 borderBottom: '2px solid #e9ecef',
                 borderRight: '1px solid #e9ecef',
                 fontWeight: 600,
-                fontSize: '0.875rem',
+                fontSize: '0.8rem',
                 color: '#495057',
                 textTransform: 'uppercase',
-                letterSpacing: '0.5px'
-              }}>
+                letterSpacing: '0.25px'
+               }}>
                 Total
               </TableCell>
               <TableCell align="center" sx={{ 
-                width: '60px', 
-                minWidth: '60px',
+                width: '44px', 
+                minWidth: '44px',
+                maxWidth: '44px',
+                p: 0,
                 backgroundColor: '#f8f9fa',
-                borderBottom: '2px solid #e9ecef',
-                fontWeight: 600,
-                fontSize: '0.875rem',
-                color: '#495057',
-                textTransform: 'uppercase',
-                letterSpacing: '0.5px'
-              }}>
-                Action
+                borderBottom: '2px solid #e9ecef'
+                }}>
+                {/* empty header for compact action column */}
               </TableCell>
             </TableRow>
           </TableHead>
@@ -292,6 +309,7 @@ const VirtualizedActivityTable: FC<VirtualizedActivityTableProps> = ({
                   index={index}
                   days={days}
                   data={data}
+                  totalsByDay={totalsByDay}
                   categoryOptions={categoryOptions}
                   onCategoryChange={handleCategoryChange}
                   onCellChange={handleCellChange}
@@ -299,21 +317,22 @@ const VirtualizedActivityTable: FC<VirtualizedActivityTableProps> = ({
                   onDeleteCategory={handleDeleteCategory}
                   getRowTotal={getRowTotal}
                   categoriesLength={categories.length}
+                  readOnly={readOnly}
                 />
               ))
             )}
-            <TableRow>
+      <TableRow>
               <TableCell sx={{ 
                 border: 'none', 
                 py: 1, 
                 textAlign: 'center', 
                 width: '200px',
-                borderRight: '1px solid #e9ecef'
-              }}>
-                <Tooltip title="Ajouter une nouvelle ligne" arrow>
+                        borderRight: '1px solid #e9ecef'
+                      }}>
+                <Tooltip title={readOnly ? 'Lecture seule' : 'Ajouter une nouvelle ligne'} arrow>
                   <IconButton
                     color="primary"
-                    onClick={onAddCategory}
+                    onClick={readOnly ? undefined : onAddCategory}
                     aria-label="Ajouter une nouvelle ligne"
                     sx={{
                       background: 'linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%)',
@@ -329,12 +348,13 @@ const VirtualizedActivityTable: FC<VirtualizedActivityTableProps> = ({
                       }
                     }}
                     size="small"
+                    disabled={readOnly}
                   >
                     <AddIcon fontSize="small" sx={{ color: '#894991' }} />
                   </IconButton>
                 </Tooltip>
               </TableCell>
-              <TableCell colSpan={days.length + 2} sx={{ border: 'none' }}></TableCell>
+              <TableCell colSpan={days.length + 3} sx={{ border: 'none' }}></TableCell>
             </TableRow>
           </TableBody>
         </Table>

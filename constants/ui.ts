@@ -3,23 +3,19 @@ import { type SectionKey } from './categories';
 // Options de catégories par section
 export const CATEGORY_OPTIONS: Record<SectionKey, string[]> = {
   facturees: [
-    "Prestation de formation",
-    "Prestation régie / expertise"
+  "Prestation régie / expertise",
+  "Prestation de formation"
   ],
   non_facturees: [
-    "Auto-formation",
-    "Ecole",
-    "Formation interne",
-    "Inter-contrat",
-    "Journée séminaire, sortie",
-    "Projet client",
-    "Projet interne"
+  "Formation interne",
+  "Auto-Formation",
   ],
   autres: [
-    "Absence autorisée",
-    "Congé",
-    "Maladie / Arrêt",
-    "RTT"
+  "Congé",
+  "Maladie / Arrêt",
+  "Inter-contrat",
+  "RTT",
+  "Absence autorisée",
   ]
 };
 

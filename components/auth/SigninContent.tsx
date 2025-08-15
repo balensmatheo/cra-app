@@ -27,9 +27,20 @@ export default function SigninContent({ searchParams }: SigninContentProps) {
 
   useEffect(() => {
     if (user) {
-      router.push('/');
+      // Redirection post-auth : on privilégie un deep link (returnTo) sinon mois courant
+      const ret = searchParams.get('returnTo');
+      if (ret) {
+        try {
+          const decoded = decodeURIComponent(ret);
+          router.replace(decoded);
+          return;
+        } catch {}
+      }
+      const now = new Date();
+      const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2,'0')}`;
+      router.replace(`/cra/${ym}?user=me`);
     }
-  }, [user, router]);
+  }, [user, router, searchParams]);
 
   useEffect(() => {
     if (searchParams.get('confirmed') === 'true') {
@@ -55,22 +66,70 @@ export default function SigninContent({ searchParams }: SigninContentProps) {
       console.log('📞 Appel de signIn avec:', { username: email, password: '***' });
       const result = await signIn({ username: email, password });
       console.log('✅ SignIn terminé, résultat:', result);
+      const step = (result as any)?.nextStep?.signInStep;
+      const isSignedIn = (result as any)?.isSignedIn === true;
+      if (isSignedIn) {
+        const ret = searchParams.get('returnTo');
+        if (ret) {
+          try { router.replace(decodeURIComponent(ret)); return; } catch {}
+        }
+        const now = new Date();
+        const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2,'0')}`;
+        router.replace(`/cra/${ym}?user=me`);
+        return;
+      }
+      // Handle Cognito challenges
+      if (step === 'CONFIRM_SIGN_IN_WITH_NEW_PASSWORD_REQUIRED' || step === 'CONFIRM_SIGN_IN_WITH_NEW_PASSWORD') {
+        // Invited user with temporary password must set a new password.
+        // Persist email & temp password in sessionStorage to avoid retyping.
+        try {
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem('np_email', email);
+            sessionStorage.setItem('np_temp', password);
+          }
+        } catch {}
+        router.push(`/new-password?email=${encodeURIComponent(email)}`);
+        return;
+      }
+      if (step === 'CONFIRM_SIGN_UP') {
+        router.push(`/confirm?email=${encodeURIComponent(email)}&from=signin`);
+        return;
+      }
       
-      // Vérifier si l'utilisateur est vraiment connecté après signIn
+      // Vérifier si l'utilisateur est connecté sinon fallback
       try {
         const currentUser = await getCurrentUser();
         console.log('👤 Utilisateur actuel après signIn:', currentUser);
         
-        // Si nous arrivons ici, l'utilisateur est connecté et confirmé
-        console.log('🎉 Utilisateur connecté et confirmé, rechargement de la page');
-        window.location.reload();
+        // Utilisateur confirmé : redirection logic préservant deep link
+        const ret = searchParams.get('returnTo');
+        if (ret) {
+          try {
+            const decoded = decodeURIComponent(ret);
+            router.replace(decoded);
+            return;
+          } catch {}
+        }
+        const now = new Date();
+        const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2,'0')}`;
+        router.replace(`/cra/${ym}?user=me`);
+        return;
         
       } catch (userErr: any) {
         console.log('⚠️ Erreur lors de la vérification de l\'utilisateur:', userErr);
         
-        // Si getCurrentUser échoue après un signIn "réussi",
-        // c'est probablement que l'utilisateur n'est pas confirmé
-        console.log('🔄 UTILISATEUR NON CONFIRMÉ DÉTECTÉ - Redirection vers la page de confirmation');
+        // Peut être un challenge non résolu (ex: nouveau mot de passe requis)
+        if (step === 'CONFIRM_SIGN_IN_WITH_NEW_PASSWORD_REQUIRED' || step === 'CONFIRM_SIGN_IN_WITH_NEW_PASSWORD') {
+          try {
+            if (typeof window !== 'undefined') {
+              sessionStorage.setItem('np_email', email);
+              sessionStorage.setItem('np_temp', password);
+            }
+          } catch {}
+          router.push(`/new-password?email=${encodeURIComponent(email)}`);
+          return;
+        }
+        console.log('🔄 Redirection vers la page de confirmation (cas standard)');
         router.push(`/confirm?email=${encodeURIComponent(email)}&from=signin`);
         return;
       }
@@ -106,8 +165,16 @@ export default function SigninContent({ searchParams }: SigninContentProps) {
         errorString.includes('unconfirmed');
       
       if (isUserNotConfirmed) {
-        console.log('🔄 UTILISATEUR NON CONFIRMÉ DÉTECTÉ dans catch - Redirection vers la page de confirmation');
-        router.push(`/confirm?email=${encodeURIComponent(email)}&from=signin`);
+        console.log('🔄 UTILISATEUR NON CONFIRMÉ DÉTECTÉ dans catch');
+        // Pour un compte créé par un admin (invitation), le flux attendu est "nouveau mot de passe requis"
+        // On tente donc d'orienter vers la page de nouveau mot de passe et stocke les infos si possible.
+        try {
+          if (typeof window !== 'undefined') {
+            sessionStorage.setItem('np_email', email);
+            sessionStorage.setItem('np_temp', password);
+          }
+        } catch {}
+        router.push(`/new-password?email=${encodeURIComponent(email)}`);
         return;
       }
       

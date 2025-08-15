@@ -1,21 +1,93 @@
 import { type ClientSchema, a, defineData } from '@aws-amplify/backend';
 
-/*== STEP 1 ===============================================================
-The section below creates a Todo database table with a "content" field. Try
-adding a new "isDone" field as a boolean. The authorization rule below
-specifies that any unauthenticated user can "create", "read", "update", 
-and "delete" any "Todo" records.
-=========================================================================*/
-const schema = a.schema({
-  CRA: a.model({
-    owner: a.string(),
-    year: a.integer(),
-    month: a.integer(),
-    dailyEntries: a.string(), // JSON.stringify des données journalières
-  })
-  .authorization(allow => [allow.owner()]) // pour restreindre l'accès à chaque utilisateur
-});
+/**
+ * ISSUE 01 — Nouveau schéma CRA (Amplify Gen2)
+ * --------------------------------------------------
+ * Modèles ajoutés (nouvelle architecture) :
+ *  - UserProfile
+ *  - Category
+ *  - SpecialDay
+ *  - Cra
+ *  - CraEntry
+ *
+ * Règles d'accès attendues :
+ *  - Tous les utilisateurs authentifiés peuvent lire les CRA / entrées / catégories / jours spéciaux / profils.
+ *  - Un utilisateur peut créer/mettre à jour/supprimer UNIQUEMENT ses propres Cra & CraEntry (allow.owner()).
+ *  - Le groupe ADMINS a plein accès (CRUD) global.
+ *
+ * NOTE: Migration vers Cra/CraEntry finalisée; le modèle legacy `CRA` a été
+ * retiré du schéma. Le front utilise désormais exclusivement Cra/CraEntry.
+ */
 
+const schema = a.schema({
+  // --- Nouveau modèle profil utilisateur ---
+  UserProfile: a.model({
+    displayName: a.string().required(),
+    email: a.email().required(),
+    groups: a.string().array().required(),
+  active: a.boolean().default(true),
+  updatedBy: a.string(), // traçabilité admin modifications groupes/activation
+  }).authorization(allow => [
+    allow.authenticated().to(['read']),
+    allow.group('ADMINS').to(['create','read','update','delete'])
+  ]),
+
+  // --- Catégories d'activité ---
+  Category: a.model({
+    label: a.string().required(),
+    // enum: Amplify Gen2 ne supporte pas .required() / .default() sur enum directement
+    kind: a.enum(['facturee','non_facturee','autre']),
+    active: a.boolean().default(true), // boolean accepte default
+  entries: a.hasMany('CraEntry','categoryId'), // back-reference pour belongsTo category
+  }).authorization(allow => [
+    allow.authenticated().to(['read']),
+    allow.group('ADMINS').to(['create','read','update','delete'])
+  ]),
+
+  // --- Jours spéciaux (férié, séminaire, etc.) ---
+  SpecialDay: a.model({
+    date: a.string().required(), // format 'YYYY-MM-DD'
+    type: a.enum(['ferie','seminaire','conge_obligatoire','autre']),
+    scope: a.enum(['global','user']),
+    userId: a.string(), // requis seulement si scope = 'user'
+  }).authorization(allow => [
+    allow.authenticated().to(['read']),
+    allow.group('ADMINS').to(['create','read','update','delete'])
+  ]),
+
+  // --- CRA (par mois) ---
+  Cra: a.model({
+    month: a.string().required(), // 'YYYY-MM'
+    status: a.enum(['draft','saved','validated','closed']), // default géré applicativement
+  isSubmitted: a.boolean().default(false),
+    entries: a.hasMany('CraEntry', 'craId'),
+  }).authorization(allow => [
+    allow.authenticated().to(['read']), // lecture globale
+    allow.owner(),                      // CRUD sur son propre CRA
+    allow.group('ADMINS')               // CRUD global
+  ]),
+
+  // --- Entrées journalières du CRA ---
+  CraEntry: a.model({
+  // Relations: clés étrangères explicites + belongsTo
+  craId: a.id().required(),
+  cra: a.belongsTo('Cra', 'craId'),
+    date: a.string().required(), // 'YYYY-MM-DD'
+  categoryId: a.id().required(),
+  // clé étrangère categoryId rendue required pour cohérence relationnelle
+  // (si optionnel, Amplify peut ne pas générer la relation attendue)
+  // Ajustement: remplacer ligne précédente par required()
+  category: a.belongsTo('Category','categoryId'),
+    value: a.float().required(), // contrainte 0..1 à appliquer en UI / validations back
+    comment: a.string(),
+  }).authorization(allow => [
+    allow.authenticated().to(['read']),
+    allow.owner(),
+    allow.group('ADMINS')
+  ]),
+
+  // (Legacy model `CRA` supprimé après migration complète.)
+});
 
 export type Schema = ClientSchema<typeof schema>;
 
@@ -26,31 +98,7 @@ export const data = defineData({
   },
 });
 
-/*== STEP 2 ===============================================================
-Go to your frontend source code. From your client-side code, generate a
-Data client to make CRUDL requests to your table. (THIS SNIPPET WILL ONLY
-WORK IN THE FRONTEND CODE FILE.)
-
-Using JavaScript or Next.js React Server Components, Middleware, Server 
-Actions or Pages Router? Review how to generate Data clients for those use
-cases: https://docs.amplify.aws/gen2/build-a-backend/data/connect-to-API/
-=========================================================================*/
-
-/*
-"use client"
-import { generateClient } from "aws-amplify/data";
-import type { Schema } from "@/amplify/data/resource";
-
-const client = generateClient<Schema>() // use this Data client for CRUDL requests
-*/
-
-/*== STEP 3 ===============================================================
-Fetch records from the database and use them in your frontend component.
-(THIS SNIPPET WILL ONLY WORK IN THE FRONTEND CODE FILE.)
-=========================================================================*/
-
-/* For example, in a React component, you can use this snippet in your
-  function's RETURN statement */
-// const { data: todos } = await client.models.Todo.list()
-
-// return <ul>{todos.map(todo => <li key={todo.id}>{todo.content}</li>)}</ul>
+// Prochaines étapes :
+//  - Mettre à jour le front pour utiliser Cra / CraEntry (Issue 03)
+//  - Mettre en place calcul et validations (Issue 03)
+//  - Retirer le modèle legacy `CRA` une fois la migration effectuée.
