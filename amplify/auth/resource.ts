@@ -2,6 +2,7 @@ import { defineAuth } from '@aws-amplify/backend';
 import { postConfirmation } from "./post-confirmation/resource"
 import { listUsersFn } from '../data/list_user/resource.js';
 import { createUserFn } from '../data/create_user/resource.js';
+import { getUserFn } from '../data/get_user/resource.js';
 
 /**
  * Define and configure your auth resource
@@ -30,6 +31,7 @@ export const auth = defineAuth({
     allow.resource(postConfirmation).to(["addUserToGroup"]),
     allow.resource(listUsersFn).to(['listUsers','listGroupsForUser']),
     allow.resource(createUserFn).to(['createUser','addUserToGroup','getUser']),
+  allow.resource(getUserFn).to(['getUser','listGroupsForUser']),
   ],
 
 });

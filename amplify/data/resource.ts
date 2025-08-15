@@ -1,6 +1,7 @@
 import { type ClientSchema, a, defineData } from '@aws-amplify/backend';
 import { listUsersFn } from './list_user/resource.js';
 import { createUserFn } from './create_user/resource.js';
+import { getUserFn } from './get_user/resource.js';
 
 /**
  * ISSUE 01 — Nouveau schéma CRA (Amplify Gen2)
@@ -108,6 +109,15 @@ const schema = a.schema({
     })
     .authorization((allow) => [allow.group('ADMINS')])
     .handler(a.handler.function(createUserFn))
+    .returns(a.json()),
+
+  getUser: a
+    .query()
+    .arguments({
+      sub: a.string().required(),
+    })
+    .authorization((allow) => [allow.group('ADMINS')])
+    .handler(a.handler.function(getUserFn))
     .returns(a.json()),
 });
 

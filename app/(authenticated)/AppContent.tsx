@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { getCurrentUser, fetchAuthSession } from 'aws-amplify/auth';
+import { generateClient } from 'aws-amplify/data';
+import type { Schema } from '@/amplify/data/resource';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Skeleton from '@mui/material/Skeleton';
@@ -18,7 +20,8 @@ import { getBusinessDaysCount } from '@/utils/businessDays';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 
 export default function AppContent() {
-  const { selectedMonth, setMonthString, isFullscreen, setIsFullscreen, resolvedTargetSub } = useCRA();
+  const { selectedMonth, setMonthString, isFullscreen, setIsFullscreen, resolvedTargetSub, currentUserSub } = useCRA();
+  const dataClient = useMemo(() => generateClient<Schema>(), []);
   const fullRef = useRef<HTMLDivElement | null>(null);
   const ownerIdRef = useRef<string | null>(null);
 
@@ -93,6 +96,31 @@ export default function AppContent() {
       } catch {}
     })();
   }, []);
+
+  // When viewing another user's CRA, fetch their profile (name) via admin getUser
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const target = resolvedTargetSub;
+      if (!target) return;
+      // If target is self, keep current token names
+      if (currentUserSub && target === currentUserSub) return;
+      try {
+        const { data, errors } = await dataClient.queries.getUser({ sub: target });
+        if (errors) throw new Error(errors[0]?.message || 'getUser error');
+        const payload = typeof data === 'string' ? JSON.parse(data as any) : (data as any);
+        const u = payload?.user;
+        if (!cancelled && u) {
+          setUserGivenName(u.given_name || '');
+          setUserFamilyName(u.family_name || '');
+        }
+      } catch (e) {
+        // ignore, keep existing names
+        console.warn('[CRA] getUser failed', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [resolvedTargetSub, currentUserSub, dataClient]);
 
   const days = useMemo(() => {
     const [y, m] = selectedMonth.split('-').map(Number);
