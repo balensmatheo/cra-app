@@ -1,4 +1,6 @@
 import { type ClientSchema, a, defineData } from '@aws-amplify/backend';
+import { listUsersFn } from './list_user/resource.js';
+import { createUserFn } from './create_user/resource.js';
 
 /**
  * ISSUE 01 — Nouveau schéma CRA (Amplify Gen2)
@@ -87,6 +89,26 @@ const schema = a.schema({
   ]),
 
   // (Legacy model `CRA` supprimé après migration complète.)
+
+  // --- Admin custom operations (per Amplify docs) ---
+  listUsers: a
+    .query()
+    .arguments({
+      search: a.string(),
+    })
+    .authorization((allow) => [allow.group('ADMINS')])
+    .handler(a.handler.function(listUsersFn))
+    .returns(a.json()),
+
+  createUser: a
+    .mutation()
+    .arguments({
+      email: a.string().required(),
+      groups: a.string().array(),
+    })
+    .authorization((allow) => [allow.group('ADMINS')])
+    .handler(a.handler.function(createUserFn))
+    .returns(a.json()),
 });
 
 export type Schema = ClientSchema<typeof schema>;

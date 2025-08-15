@@ -24,7 +24,9 @@ import PersonAddRoundedIcon from '@mui/icons-material/PersonAddRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
-import { fetchAuthSession } from 'aws-amplify/auth';
+import { getCurrentUser } from 'aws-amplify/auth';
+import type { Schema } from '@/amplify/data/resource';
+import { generateClient } from 'aws-amplify/data';
 import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
 
@@ -42,11 +44,13 @@ export default function SalariesPage() {
   const router = useRouter();
   const theme = useTheme();
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'));
+  const client = useMemo(() => generateClient<Schema>(), []);
   const [meIsAdmin, setMeIsAdmin] = useState(false);
   const [meSub, setMeSub] = useState<string | null>(null);
   const [users, setUsers] = useState<PoolUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
+  const [mounted, setMounted] = useState(false);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newGroups, setNewGroups] = useState('USERS');
@@ -56,27 +60,23 @@ export default function SalariesPage() {
 
   const validateEmail = (email: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
+  // Render-only-on-client flag to prevent hydration mismatch from browser extensions injecting attributes
+  useEffect(() => { setMounted(true); }, []);
+
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const sess = await fetchAuthSession();
-        const payload: any = sess.tokens?.idToken?.payload || {};
-        const groups: string[] = payload['cognito:groups'] || [];
-        setMeIsAdmin(groups.includes('ADMINS'));
-        setMeSub(payload.sub || null);
+        const user = await getCurrentUser();
+        setMeSub((user as any)?.userId || null);
       } catch {}
-      finally {
-        if (mounted) {
-          // continue
-        }
-      }
-      // Try calling server route that should proxy the admin-list-users function; if 501, fallback
+      // Try protected listUsers to infer admin and populate
       try {
-        const res = await fetch('/api/admin/list-users', { method: 'POST', body: JSON.stringify({ search: q }) });
-        if (res.ok) {
-          const json = await res.json();
-          const list = (json.users || []).map((u: any) => ({
+        const { data, errors } = await client.queries.listUsers({ search: q || undefined });
+        console.log('[Salaries] listUsers result:', { data, errors });
+        if (errors) throw new Error(errors[0]?.message || 'Erreur');
+        const payload = typeof data === 'string' ? JSON.parse(data) : (data as any);
+        const list = ((payload as any)?.users || []).map((u: any) => ({
             sub: u.username,
             email: u.email,
             given_name: u.given_name,
@@ -85,13 +85,16 @@ export default function SalariesPage() {
             status: u.status,
             groups: u.groups || [],
           } as PoolUser));
-          if (mounted) setUsers(list);
-        } else {
+        console.table(list);
+        if (mounted) {
+          setUsers(list);
+          setMeIsAdmin(true);
+        }
+      } catch (e) {
+          console.error('[Salaries] listUsers failed:', e);
           // Fallback minimal: show only current user if we cannot list pool users
           if (mounted) setUsers(prev => prev.length ? prev : (meSub ? [{ sub: meSub, email: '', given_name: 'Moi', family_name: '', enabled: true, status: 'CONFIRMED', groups: meIsAdmin ? ['ADMINS'] : ['USERS'] }] : []));
-        }
-      } catch {
-        if (mounted) setUsers(prev => prev.length ? prev : (meSub ? [{ sub: meSub, email: '', given_name: 'Moi', family_name: '', enabled: true, status: 'CONFIRMED', groups: meIsAdmin ? ['ADMINS'] : ['USERS'] }] : []));
+          if (mounted) setMeIsAdmin(false);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -123,15 +126,31 @@ export default function SalariesPage() {
         )}
       </Box>
       <Box sx={{ display:'flex', alignItems:'center', gap:2, mb:2, flexWrap:'wrap' }}>
-        <TextField
-          value={q}
-          onChange={e=>setQ(e.target.value)}
-          placeholder="Rechercher par nom ou email"
-          size="small"
-          fullWidth
-          sx={{ maxWidth: 520 }}
-          InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color:'#999' }}/></InputAdornment> }}
-        />
+        {mounted ? (
+          <TextField
+            value={q}
+            onChange={e=>setQ(e.target.value)}
+            placeholder="Rechercher par nom ou email"
+            type="search"
+            autoComplete="off"
+            size="small"
+            fullWidth
+            sx={{ maxWidth: 520 }}
+            InputProps={{
+              startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color:'#999' }}/></InputAdornment>,
+              inputProps: {
+                autoComplete: 'off',
+                'data-1p-ignore': 'true',
+                'data-lpignore': 'true',
+                'data-form-type': 'other',
+                spellCheck: false,
+                autoCorrect: 'off',
+              }
+            }}
+          />
+        ) : (
+          <Box sx={{ height: 40, maxWidth: 520, width: '100%', bgcolor: '#f5f5f5', borderRadius: 1 }} />
+        )}
       </Box>
       <Divider sx={{ mb: 2 }} />
 
@@ -284,9 +303,8 @@ export default function SalariesPage() {
                     ? newGroupsSel
                     : newGroups.split(',').map(s=>s.trim()).filter(Boolean);
                   const groups = Array.from(new Set(candidates));
-                  const res = await fetch('/api/admin/create-user', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email: newEmail, groups }) });
-                  const json = await res.json();
-                  if (!res.ok) throw new Error(json?.error || 'Erreur création');
+                  const { data, errors } = await client.mutations.createUser({ email: newEmail, groups });
+                  if (errors) throw new Error(errors[0]?.message || 'Erreur');
                   setToast({open:true, msg:'Utilisateur créé. Invitation envoyée.', sev:'success'});
                   setNewEmail('');
                   setNewGroups('USERS');
@@ -294,23 +312,25 @@ export default function SalariesPage() {
                   setInviteOpen(false);
                   // Refresh list
                   try {
-                    const r2 = await fetch('/api/admin/list-users', { method:'POST', body: JSON.stringify({ search: q }) });
-                    if (r2.ok) {
-                      const j2 = await r2.json();
-                      const list = (j2.users || []).map((u: any) => ({
-                        sub: u.username,
-                        email: u.email,
-                        given_name: u.given_name,
-                        family_name: u.family_name,
-                        enabled: u.enabled,
-                        status: u.status,
-                        groups: u.groups || [],
-                      } as PoolUser));
-                      setUsers(list);
-                    }
-                  } catch {}
+                    const { data, errors } = await client.queries.listUsers({});
+                    console.log('[Salaries] listUsers after create:', { data, errors });
+                    const payload2 = typeof data === 'string' ? JSON.parse(data) : (data as any);
+                    const list = (((payload2 as any)?.users) || []).map((u: any) => ({
+                      sub: u.username,
+                      email: u.email,
+                      given_name: u.given_name,
+                      family_name: u.family_name,
+                      enabled: u.enabled,
+                      status: u.status,
+                      groups: u.groups || [],
+                    } as PoolUser));
+                    console.table(list);
+                    setUsers(list);
+                  } catch (e) {
+                    console.error('[Salaries] listUsers after create failed:', e);
+                  }
                 } catch(e:any) {
-                  setToast({open:true, msg:e.message || 'Erreur', sev:'error'});
+                  setToast({open:true, msg:e?.message || 'Erreur', sev:'error'});
                 } finally { setCreating(false); }
               }}
               sx={{ bgcolor:'#894991', '&:hover':{ bgcolor:'#6a3a7a' }}}

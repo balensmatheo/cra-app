@@ -11,5 +11,5 @@ export default function AmplifyProvider({ children }: { children: ReactNode }) {
     Amplify.configure(outputs);
     configuredRef.current = true;
   }
-  return <>{children}</>;
+  return children as any;
 }

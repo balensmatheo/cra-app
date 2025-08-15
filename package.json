@@ -6,7 +6,8 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+  "lint": "next lint",
+  "test": "vitest run --coverage"
   },
   "dependencies": {
     "@aws-amplify/ui-react": "^6.11.2",
@@ -27,11 +28,13 @@
     "react-easy-crop": "^5.5.0",
     "react-window": "^1.8.11",
     "rimraf": "^3.0.2",
-    "xlsx": "^0.18.5"
+  "xlsx": "^0.18.5",
+  "zod": "^3.23.8",
+  "aws-embedded-metrics": "^4.4.1"
   },
   "devDependencies": {
-    "@aws-amplify/backend": "^1.16.1",
-    "@aws-amplify/backend-cli": "^1.8.0",
+  "@aws-amplify/backend": "^1.30.0",
+  "@aws-amplify/backend-cli": "^1.12.0",
     "@aws-sdk/client-cognito-identity-provider": "^3.840.0",
     "@types/aws-lambda": "^8.10.150",
     "@types/exceljs": "^0.5.3",
@@ -44,6 +47,8 @@
     "eslint": "9.33.0",
     "eslint-config-next": "15.4.6",
     "tsx": "^4.20.3",
-    "typescript": "^5.8.3"
+  "typescript": "^5.8.3",
+  "vitest": "^2.0.5",
+  "@vitest/coverage-v8": "^2.0.5"
   }
 }
