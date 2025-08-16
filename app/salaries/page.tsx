@@ -135,7 +135,9 @@ export default function SalariesPage() {
   const goToCra = (sub: string, editable: boolean) => {
     const now = new Date();
     const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2,'0')}`;
-    router.push(`/cra/${ym}?user=${encodeURIComponent(sub)}`);
+    const params = new URLSearchParams({ user: sub });
+    if (editable) params.set('edit', '1');
+    router.push(`/cra/${ym}?${params.toString()}`);
   };
 
   return (
@@ -196,7 +198,11 @@ export default function SalariesPage() {
           <CircularProgress size={18} /> Chargement des utilisateurs…
         </Box>
       ) : (
-        <Box sx={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap: 2 }}>
+        <Box sx={{
+          display:'grid',
+          gridTemplateColumns: { xs: '1fr', md: 'repeat(auto-fill, minmax(420px, 1fr))' },
+          gap: 2.5
+        }}>
           {filtered.map(u => {
             const name = [u.given_name, u.family_name].filter(Boolean).join(' ') || u.email || u.sub;
             const initials = (u.given_name?.[0] || '') + (u.family_name?.[0] || '');
@@ -207,12 +213,13 @@ export default function SalariesPage() {
             const canEdit = meIsAdmin; // only admins can edit CRA, others read-only
             return (
               <Box key={u.sub} sx={{
-                p: 2,
+                p: 3,
                 borderRadius: 3,
                 border: '1px solid #eee',
                 background: 'linear-gradient(180deg, #ffffff 0%, #fcfbfd 100%)',
                 display: 'flex',
-                gap: 2,
+                flexWrap: { xs: 'wrap', sm: 'nowrap' },
+                gap: 2.5,
                 alignItems: 'center',
                 transition: 'box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease',
                 '&:hover': {
@@ -233,25 +240,26 @@ export default function SalariesPage() {
                   bgcolor: 'transparent',
                   color: '#6a3a7a',
                   fontWeight: 700,
-                  width: 40,
-                  height: 40,
-                  fontSize: 14,
+                  width: 48,
+                  height: 48,
+                  fontSize: 16,
                   background: 'linear-gradient(135deg, #f4e9f6 0%, #ece3f1 100%)',
-                  border: '1px solid #efe7f3'
+                  border: '1px solid #efe7f3',
+                  flexShrink: 0
                 }}>
                   {initials || 'U'}
                 </Avatar>
-                <Box sx={{ flex:1, minWidth:0 }}>
-                  <Typography noWrap sx={{ fontWeight:700, color:'#4a2a57', letterSpacing: 0.2, fontSize: '0.95rem' }}>{name}</Typography>
-                  <Typography variant="caption" noWrap color="text.secondary">{u.email}</Typography>
-                  <Box sx={{ mt: 0.5, display:'flex', gap:1, flexWrap:'wrap' }}>
+                <Box sx={{ flex: '1 1 auto', minWidth: 0, overflow: 'hidden' }}>
+                  <Typography noWrap sx={{ fontWeight:800, color:'#3b1f46', letterSpacing: 0.2, fontSize: '1.05rem', maxWidth: '100%' }}>{name}</Typography>
+                  <Typography variant="body2" noWrap color="text.secondary" sx={{ display: 'block', maxWidth: '100%' }}>{u.email}</Typography>
+                  <Box sx={{ mt: 0.75, display:'flex', gap:1, flexWrap:'wrap' }}>
                     {isAdmin && <Chip size="small" label="Admin" color="secondary" variant="outlined" />}
                     {u.enabled === false && <Chip size="small" label="Désactivé" color="warning" variant="outlined" />}
                     {meIsAdmin && isPending && <Chip size="small" label="En attente" color="warning" />}
                     {meIsAdmin && isConfirmed && <Chip size="small" label="Validé" color="success" />}
                   </Box>
                 </Box>
-                <Box sx={{ display:'flex', gap:1 }}>
+                <Box sx={{ display:'flex', gap:1, flexShrink: 0, width: { xs: '100%', sm: 'auto' }, justifyContent: { xs: 'flex-end', sm: 'initial' }, mt: { xs: 1, sm: 0 } }}>
                   <IconButton size="small" onClick={()=>goToCra(u.sub, false)} title="Voir le CRA">
                     <VisibilityIcon fontSize="small" />
                   </IconButton>

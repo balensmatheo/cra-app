@@ -322,8 +322,9 @@ export default function ActivityTable({
                 width: '200px',
                 borderRight: '1px solid #e9ecef'
               }}>
-        <Tooltip title={readOnly ? 'Lecture seule' : 'Ajouter une nouvelle ligne'} arrow>
-                  <IconButton
+  <Tooltip title={readOnly ? 'Lecture seule' : 'Ajouter une nouvelle ligne'} arrow>
+      <span>
+      <IconButton
                     color="primary"
           onClick={readOnly ? undefined : onAddCategory}
                     aria-label="Ajouter une nouvelle ligne"
@@ -345,6 +346,7 @@ export default function ActivityTable({
                   >
                     <AddIcon fontSize="small" sx={{ color: '#894991' }} />
                   </IconButton>
+      </span>
                 </Tooltip>
               </TableCell>
               <TableCell colSpan={days.length + 3} sx={{ border: 'none' }}></TableCell>

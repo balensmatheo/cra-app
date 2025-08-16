@@ -48,8 +48,8 @@ const SECTION_KIND: Record<SectionKey, any> = {
   autres: 'autre',
 };
 
-export function useCraGrid(month: string, targetSub?: string | null): UseCraGridResult {
-  const cra = useCraEntries(month, targetSub);
+export function useCraGrid(month: string, targetSub?: string | null, editMode?: boolean): UseCraGridResult {
+  const cra = useCraEntries(month, targetSub, editMode);
   const { entries, updateEntry, removeEntry, status, readOnly, saveDraft: baseSaveDraft, validateCra, closeCra, reopenCra, computeValidation, isLoading: entriesLoading, lastSavedAt, resetAll, isDirty, persistBatch } = cra;
   const { isSaving } = cra as any;
 

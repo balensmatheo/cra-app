@@ -22,6 +22,9 @@ interface CRAContextType {
   targetUser: string | null; // 'me' or a Cognito sub
   setTargetUser: (u: string | null) => void;
   resolvedTargetSub: string | null; // actual sub to use (self when targetUser === 'me' or null)
+  // Edit intent (admin must opt-in via pencil). Default false.
+  editMode: boolean;
+  setEditMode: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
 const CRAContext = createContext<CRAContextType | undefined>(undefined);
@@ -36,6 +39,7 @@ export const CRAProvider = ({ children }: { children: ReactNode }) => {
   const [ownerId, setOwnerId] = useState<string | null>(null);
   const [currentUserSub, setCurrentUserSub] = useState<string | null>(null);
   const [targetUser, setTargetUser] = useState<string | null>('me');
+  const [editMode, setEditMode] = useState<boolean>(false);
   const currentYear = today.getFullYear();
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -114,6 +118,8 @@ export const CRAProvider = ({ children }: { children: ReactNode }) => {
   targetUser,
   setTargetUser,
   resolvedTargetSub: targetUser && targetUser !== 'me' ? targetUser : currentUserSub,
+  editMode,
+  setEditMode,
   };
 
   return <CRAContext.Provider value={value}>{children}</CRAContext.Provider>;

@@ -43,7 +43,7 @@ interface UseCraEntriesResult {
 // Placeholder categories mapping check (kind for comment requirement) - will be fetched later
 interface CategoryLike { id: string; kind?: string | null }
 
-export function useCraEntries(month: string, targetSub?: string | null): UseCraEntriesResult {
+export function useCraEntries(month: string, targetSub?: string | null, editMode?: boolean): UseCraEntriesResult {
   const [craId, setCraId] = useState<string | null>(null);
   const [status, setStatus] = useState<CraStatus>('draft');
   const [entries, setEntries] = useState<Schema['CraEntry']['type'][]>([]);
@@ -167,7 +167,23 @@ export function useCraEntries(month: string, targetSub?: string | null): UseCraE
   const isOwner = craOwnerSub && effectiveOwnerSub ? craOwnerSub === effectiveOwnerSub : true; // compare against targeted owner
   // If viewing someone else's CRA and not admin, force read-only regardless of status
   const viewingOther = effectiveOwnerSub && ownerSubRef.current && effectiveOwnerSub !== ownerSubRef.current;
-  const readOnly = viewingOther && !isAdmin ? true : ((status === 'closed' || status === 'validated') ? (!isAdmin) : (!isOwner && !isAdmin));
+  // New policy: default to read-only when viewing; admin must opt-in via editMode to modify others.
+  // Owners can edit their own CRA (subject to status) without editMode.
+  const readOnly = (() => {
+    // If viewing someone else
+    if (viewingOther) {
+      // Only admins in editMode can edit; otherwise read-only
+      if (!isAdmin) return true;
+      // Admin but no edit intent => read-only
+      if (!editMode) return true;
+    }
+    // Status locks always apply unless admin+editMode
+    if (status === 'closed') return !(isAdmin && editMode);
+    if (status === 'validated') return !(isAdmin && editMode);
+    // For draft/saved: non-owner cannot edit unless admin+editMode
+    if (!isOwner) return !(isAdmin && editMode);
+    return false;
+  })();
 
   const loadCra = useCallback(async () => {
   if (!ownerSubRef.current) { setIsLoading(false); return; }
@@ -225,7 +241,7 @@ export function useCraEntries(month: string, targetSub?: string | null): UseCraE
         } catch { /* ignore */ }
         // Create draft CRA lazily only when targeting self OR admin viewing others
         try {
-          const allowCreate = !targetSub || targetSub === ownerSubRef.current || isAdmin;
+          const allowCreate = !targetSub || targetSub === ownerSubRef.current || (isAdmin && !!editMode);
           if (allowCreate) {
             const createRes = await client.models.Cra.create({ month });
             if (createRes.data) {
@@ -248,8 +264,7 @@ export function useCraEntries(month: string, targetSub?: string | null): UseCraE
   useEffect(() => { if (ownerReady) loadCra(); }, [loadCra, ownerReady]);
 
   const updateEntry = useCallback((partial: Partial<Schema['CraEntry']['type']> & { id?: string; date: string; categoryId: any; value: number; comment?: string }) => {
-    if (!isAdmin && !isOwner) return;
-    if (!isAdmin && viewingOther) return; // non-admin cannot edit others
+    if (readOnly) return;
     // Double-lock: vérifier status courant + signature backend en différé (anti race)
     if (status === 'validated' || status === 'closed') return;
     // Vérification asynchrone du statut le plus récent avant de confirmer modification locale
@@ -271,13 +286,12 @@ export function useCraEntries(month: string, targetSub?: string | null): UseCraE
         return [...prev, { id: tempId, craId: craId || '', date: partial.date, categoryId: partial.categoryId, value: partial.value, comment: partial.comment } as any];
       });
     })();
-  }, [craId, status, isAdmin, isOwner]);
+  }, [craId, status, readOnly]);
 
   // Persist helper (moved above autosave effect to avoid temporal dead zone)
   const persistEntries = useCallback(async () => {
-    if (!craId) return;
-    if (!isAdmin && !isOwner) return;
-    if (!isAdmin && viewingOther) return;
+  if (!craId) return;
+  if (readOnly) return;
     if (status === 'validated' || status === 'closed') return; // guard
     // Re-fetch latest CRA status to enforce backend immutability semantics
     try {
@@ -316,7 +330,7 @@ export function useCraEntries(month: string, targetSub?: string | null): UseCraE
       await client.models.CraEntry.update({ id: ex.id, value: ex.value, comment: ex.comment });
     }
   setLastSavedAt(new Date());
-  }, [entries, craId, status, isAdmin, isOwner]);
+  }, [entries, craId, status, readOnly]);
 
   // Persist a batch of pending values/comments directly (used by grid Save to avoid timing issues)
   const persistBatch = useCallback(async (
@@ -324,9 +338,8 @@ export function useCraEntries(month: string, targetSub?: string | null): UseCraE
     pendingComments: Record<string, string>,
     pendingDeletes?: Record<string, string[]>
   ) => {
-    if (!craId) return;
-    if (!isAdmin && !isOwner) return;
-    if (!isAdmin && viewingOther) return;
+  if (!craId) return;
+  if (readOnly) return;
     if (status === 'validated' || status === 'closed') return;
     setIsSaving(true);
     // Re-check latest status to avoid persisting on locked CRA
@@ -401,13 +414,12 @@ export function useCraEntries(month: string, targetSub?: string | null): UseCraE
     finally {
       setIsSaving(false);
     }
-  }, [craId, entries, isAdmin, isOwner, status]);
+  }, [craId, entries, status, readOnly]);
 
   // Autosave désactivé : les données ne sont plus persistées automatiquement.
 
   const removeEntry = useCallback((id: string) => {
-    if (!isAdmin && !isOwner) return;
-    if (!isAdmin && viewingOther) return;
+  if (readOnly) return;
     if (status === 'validated' || status === 'closed') return;
     (async () => {
       if (!craId) return;
@@ -421,7 +433,7 @@ export function useCraEntries(month: string, targetSub?: string | null): UseCraE
       } catch { /* ignore */ }
       setEntries(prev => prev.filter(e => e.id !== id));
     })();
-  }, [craId, status, isAdmin, isOwner]);
+  }, [craId, status, readOnly]);
 
   // Validation rules
   const computeValidation = useCallback(() => {
@@ -503,8 +515,7 @@ export function useCraEntries(month: string, targetSub?: string | null): UseCraE
 
   const validateCra = useCallback(async () => {
     if (!craId) return false;
-    if (!isAdmin && !isOwner) return false;
-    if (!isAdmin && viewingOther) return false;
+    if (readOnly) return false;
     const { ok } = computeValidation();
     if (!ok) return false;
     try {
@@ -520,15 +531,14 @@ export function useCraEntries(month: string, targetSub?: string | null): UseCraE
       await persistEntries();
       await client.models.Cra.update({ id: craId, status: 'validated', isSubmitted: true as any });
       setStatus('validated');
-    savedSignatureRef.current = currentSignature;
+      savedSignatureRef.current = currentSignature;
       return true;
     } finally { /* submitting spinner handled at UI level */ }
-  }, [craId, computeValidation, persistEntries, currentSignature, isAdmin, isOwner]);
+  }, [craId, computeValidation, persistEntries, currentSignature, readOnly, status]);
 
   const closeCra = useCallback(async () => {
-    if (!craId) return false;
-    if (!isAdmin && !isOwner) return false;
-    if (!isAdmin && viewingOther) return false;
+  if (!craId) return false;
+  if (readOnly) return false;
     if (status !== 'validated') return false; // must be validated first
     setIsSaving(true);
     try {
@@ -548,13 +558,12 @@ export function useCraEntries(month: string, targetSub?: string | null): UseCraE
     } finally {
       setIsSaving(false);
     }
-  }, [craId, status, currentSignature, isAdmin, isOwner]);
+  }, [craId, status, currentSignature, readOnly]);
 
   // Reopen a validated CRA back to 'saved' to allow further edits (owner or admin)
   const reopenCra = useCallback(async () => {
-    if (!craId) return false;
-    if (!isAdmin && !isOwner) return false;
-    if (!isAdmin && viewingOther) return false;
+  if (!craId) return false;
+  if (readOnly) return false;
     setIsSaving(true);
     try {
       try {
@@ -574,12 +583,11 @@ export function useCraEntries(month: string, targetSub?: string | null): UseCraE
     } finally {
       setIsSaving(false);
     }
-  }, [craId, status, isAdmin, isOwner]);
+  }, [craId, status, readOnly]);
 
   const resetAll = useCallback(async () => {
-    if (!craId) return;
-    if (!isAdmin && !isOwner) return;
-    if (!isAdmin && viewingOther) return;
+  if (!craId) return;
+  if (readOnly) return;
     setIsSaving(true);
     try {
       try {
@@ -603,7 +611,7 @@ export function useCraEntries(month: string, targetSub?: string | null): UseCraE
     } finally {
       setIsSaving(false);
     }
-  }, [craId, entries, isAdmin, isOwner]);
+  }, [craId, entries, readOnly]);
 
   return {
     craId,

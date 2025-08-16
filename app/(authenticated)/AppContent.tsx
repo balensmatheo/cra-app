@@ -20,7 +20,7 @@ import { getBusinessDaysCount } from '@/utils/businessDays';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 
 export default function AppContent() {
-  const { selectedMonth, setMonthString, isFullscreen, setIsFullscreen, resolvedTargetSub, currentUserSub } = useCRA();
+  const { selectedMonth, setMonthString, isFullscreen, setIsFullscreen, resolvedTargetSub, currentUserSub, editMode } = useCRA();
   const dataClient = useMemo(() => generateClient<Schema>(), []);
   const fullRef = useRef<HTMLDivElement | null>(null);
   const ownerIdRef = useRef<string | null>(null);
@@ -48,7 +48,7 @@ export default function AppContent() {
     pendingComments,
     isAdmin,
     isSaving: isSavingCra,
-  } = useCraGrid(selectedMonth, resolvedTargetSub);
+  } = useCraGrid(selectedMonth, resolvedTargetSub, editMode);
 
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' as 'success'|'error'|'info' });
   const [userFamilyName, setUserFamilyName] = useState('');
@@ -57,6 +57,7 @@ export default function AppContent() {
   const [exporting, setExporting] = useState(false);
   const [closing, setClosing] = useState(false);
   const [reopening, setReopening] = useState(false);
+  const editingOther = !!(editMode && isAdmin && resolvedTargetSub && currentUserSub && resolvedTargetSub !== currentUserSub);
 
   // Sync horizontal scroll across the three tables
   const tableContainersRef = useRef<Array<HTMLDivElement | null>>([]);
@@ -374,7 +375,7 @@ export default function AppContent() {
           ownerId={ownerIdRef.current}
           handleExport={handleExport}
           toggleFullscreen={toggleFullscreenNative}
-          statusBadge={{ status, readOnly }}
+          statusBadge={{ status, readOnly, editingOther }}
           validationState={{ ok, errors }}
           lastSavedAt={lastSavedAt}
           onResetAll={() => resetAll()}
@@ -388,7 +389,7 @@ export default function AppContent() {
           exporting={exporting}
           closing={closing}
           reopening={reopening}
-          onReopen={status === 'validated' ? handleReopen : undefined}
+          onReopen={status === 'validated' && !readOnly ? handleReopen : undefined}
         />
       )}
 

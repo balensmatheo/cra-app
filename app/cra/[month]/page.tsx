@@ -10,10 +10,11 @@ export default function CraMonthPage() {
   const params = useParams<{ month: string }>();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { setMonthString, setTargetUser } = useCRA();
+  const { setMonthString, setTargetUser, setEditMode } = useCRA();
 
   const monthParam = params?.month; // attendu 'YYYY-MM'
   const userParam = searchParams.get('user');
+  const editParam = searchParams.get('edit');
 
   useEffect(() => {
     if (!monthParam || !/^\d{4}-\d{2}$/.test(monthParam)) {
@@ -30,7 +31,9 @@ export default function CraMonthPage() {
     } else {
       setTargetUser('me');
     }
-  }, [monthParam, userParam, setMonthString, setTargetUser, router]);
+    // Edit mode: only enabled when explicit edit=1 is present; otherwise false
+    if (editParam === '1' || editParam === 'true') setEditMode(true); else setEditMode(false);
+  }, [monthParam, userParam, editParam, setMonthString, setTargetUser, setEditMode, router]);
 
   return <AppContent />;
 }

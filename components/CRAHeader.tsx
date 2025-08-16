@@ -19,7 +19,7 @@ interface CRAHeaderProps {
   ownerId: string | null;
   handleExport: () => void;
   toggleFullscreen: () => void;
-  statusBadge?: { status: string; validationDisabledReason?: string; readOnly?: boolean };
+  statusBadge?: { status: string; validationDisabledReason?: string; readOnly?: boolean; editingOther?: boolean };
   validationState?: { ok: boolean; errors: string[] }; // (désactivé visuellement pour brouillon)
   lastSavedAt?: Date | null;
   onResetAll?: () => void;
@@ -63,13 +63,10 @@ const CRAHeader: React.FC<CRAHeaderProps> = ({
   , reopening
   , onReopen
 }) => {
-  const [confirmResetOpen, setConfirmResetOpen] = useState(false);
   const [whyOpen, setWhyOpen] = useState(false);
-  const openConfirmReset = () => setConfirmResetOpen(true);
-  const closeConfirmReset = () => setConfirmResetOpen(false);
-  const confirmReset = async () => { closeConfirmReset(); onResetAll?.(); };
   const status = statusBadge?.status;
   const readOnly = statusBadge?.readOnly;
+  const editingOther = statusBadge?.editingOther;
   const statusColorMap: Record<string, string> = {
     draft: '#9e9e9e',
     saved: '#1976d2',
@@ -179,6 +176,21 @@ const CRAHeader: React.FC<CRAHeaderProps> = ({
             Lecture seule
           </Box>
         )}
+        {!readOnly && editingOther && (
+          <Box sx={{
+            px: 1.5,
+            py: 0.75,
+            borderRadius: 2,
+            backgroundColor: '#f4e9f6',
+            border: '1px solid #e7dff0',
+            fontSize: '0.7rem',
+            fontWeight: 700,
+            color: '#6a3a7a',
+            textTransform: 'uppercase'
+          }}>
+            Édition d’un autre utilisateur
+          </Box>
+        )}
       </Box>
       <Box sx={{
         display: 'flex',
@@ -263,25 +275,6 @@ const CRAHeader: React.FC<CRAHeaderProps> = ({
             </IconButton>
           </Tooltip>
         )}
-        {status !== 'validated' && !readOnly && (
-          <Button
-            variant="outlined"
-            color="error"
-            onClick={openConfirmReset}
-            size="small"
-            sx={{
-              borderColor: '#d32f2f',
-              color: '#d32f2f',
-              textTransform: 'none',
-              '&:hover': { borderColor: '#9a0007', color: '#9a0007' }
-            }}
-            disabled={saving}
-          >
-            <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
-              Réinitialiser les modifications
-            </Box>
-          </Button>
-        )}
         {status !== 'validated' && (
         <Button
           variant="outlined"
@@ -338,23 +331,6 @@ const CRAHeader: React.FC<CRAHeaderProps> = ({
           </Button>
         )}
       </Box>
-      <Dialog open={confirmResetOpen} onClose={closeConfirmReset} maxWidth="xs" fullWidth>
-        <DialogTitle>Réinitialiser les modifications ?</DialogTitle>
-        <DialogContent dividers>
-          <Typography variant="body2" sx={{ mb: 1 }}>
-            Cette action va:
-          </Typography>
-          <ul style={{ marginTop: 0 }}>
-            <li><Typography variant="body2">Supprimer toutes les entrées de ce mois (saisies journalières).</Typography></li>
-            <li><Typography variant="body2">Revenir au statut Brouillon.</Typography></li>
-          </ul>
-          <Typography variant="body2" color="error">Cette action est irréversible.</Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button size="small" onClick={closeConfirmReset}>Annuler</Button>
-          <Button size="small" color="error" variant="contained" onClick={confirmReset} autoFocus>Confirmer</Button>
-        </DialogActions>
-      </Dialog>
       <Dialog open={whyOpen} onClose={() => setWhyOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Pourquoi le bouton Soumettre est désactivé ?</DialogTitle>
         <DialogContent dividers>

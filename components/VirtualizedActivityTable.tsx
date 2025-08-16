@@ -330,6 +330,7 @@ const VirtualizedActivityTable: FC<VirtualizedActivityTableProps> = ({
                         borderRight: '1px solid #e9ecef'
                       }}>
                 <Tooltip title={readOnly ? 'Lecture seule' : 'Ajouter une nouvelle ligne'} arrow>
+                  <span>
                   <IconButton
                     color="primary"
                     onClick={readOnly ? undefined : onAddCategory}
@@ -352,6 +353,7 @@ const VirtualizedActivityTable: FC<VirtualizedActivityTableProps> = ({
                   >
                     <AddIcon fontSize="small" sx={{ color: '#894991' }} />
                   </IconButton>
+                  </span>
                 </Tooltip>
               </TableCell>
               <TableCell colSpan={days.length + 3} sx={{ border: 'none' }}></TableCell>
