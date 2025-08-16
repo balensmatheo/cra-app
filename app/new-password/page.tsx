@@ -101,15 +101,26 @@ function NewPasswordContent() {
       {error && <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>}
       {info && <Alert severity="info" sx={{ mb: 1 }}>{info}</Alert>}
       <form onSubmit={(e)=>{ e.preventDefault(); if (!loading) handleSubmit(); }}>
-        <TextField label="Email" type="email" value={email} onChange={e=>setEmail(e.target.value)} fullWidth disabled={loading} />
-        {tempPassword ? null : (
-          <TextField label="Mot de passe temporaire" type="password" value={tempPassword} onChange={e=>setTempPassword(e.target.value)} fullWidth disabled={loading} />
-        )}
-        <TextField label="Nouveau mot de passe" type="password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} fullWidth disabled={loading} />
-        <PasswordConstraints password={newPassword} />
-        <TextField label="Confirmer le mot de passe" type="password" value={confirm} onChange={e=>setConfirm(e.target.value)} fullWidth disabled={loading} />
-        <TextField label="Prénom" value={firstName} onChange={e=>setFirstName(e.target.value)} fullWidth disabled={loading} />
-        <TextField label="Nom" value={lastName} onChange={e=>setLastName(e.target.value)} fullWidth disabled={loading} />
+        <Box sx={{ display:'flex', flexDirection:'column', gap: 1.5, mt: 1.5 }}>
+          <TextField label="Email" type="email" value={email} onChange={e=>setEmail(e.target.value)} fullWidth disabled={loading} />
+          {tempPassword ? null : (
+            <TextField label="Mot de passe temporaire" type="password" value={tempPassword} onChange={e=>setTempPassword(e.target.value)} fullWidth disabled={loading} />
+          )}
+          <TextField label="Nouveau mot de passe" type="password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} fullWidth disabled={loading} />
+          <PasswordConstraints password={newPassword} />
+          <TextField
+            label="Confirmer le mot de passe"
+            type="password"
+            value={confirm}
+            onChange={e=>setConfirm(e.target.value)}
+            fullWidth
+            disabled={loading}
+            error={!!confirm && newPassword !== confirm}
+            helperText={!!confirm && newPassword !== confirm ? 'Les mots de passe ne correspondent pas.' : ' '}
+          />
+          <TextField label="Prénom" value={firstName} onChange={e=>setFirstName(e.target.value)} fullWidth disabled={loading} />
+          <TextField label="Nom" value={lastName} onChange={e=>setLastName(e.target.value)} fullWidth disabled={loading} />
+        </Box>
         <Button
           type="submit"
           variant="contained"
@@ -129,7 +140,7 @@ function NewPasswordContent() {
           {loading ? <CircularProgress size={24} sx={{ color:'#fff' }} /> : 'Valider'}
         </Button>
       </form>
-      <Button variant="text" onClick={()=>router.push('/signin')} sx={{ color:'#894991', textTransform:'none', width:'100%' }}>Retour</Button>
+      <Button variant="text" onClick={()=>router.push('/signin')} sx={{ color:'#894991', textTransform:'none', width:'100%', mt: 1.5 }}>Retour</Button>
     </AuthLayout>
   );
 }

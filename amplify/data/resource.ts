@@ -2,6 +2,7 @@ import { type ClientSchema, a, defineData } from '@aws-amplify/backend';
 import { listUsersFn } from './list_user/resource.js';
 import { createUserFn } from './create_user/resource.js';
 import { getUserFn } from './get_user/resource.js';
+import { deleteUserFn } from './delete_user/resource.js';
 
 /**
  * ISSUE 01 — Nouveau schéma CRA (Amplify Gen2)
@@ -97,7 +98,7 @@ const schema = a.schema({
     .arguments({
       search: a.string(),
     })
-    .authorization((allow) => [allow.group('ADMINS')])
+  .authorization((allow) => [allow.group('ADMINS'), allow.group('USERS')])
     .handler(a.handler.function(listUsersFn))
     .returns(a.json()),
 
@@ -116,8 +117,17 @@ const schema = a.schema({
     .arguments({
       sub: a.string().required(),
     })
-    .authorization((allow) => [allow.group('ADMINS')])
+  .authorization((allow) => [allow.group('ADMINS'), allow.group('USERS')])
     .handler(a.handler.function(getUserFn))
+    .returns(a.json()),
+
+  deleteUser: a
+    .mutation()
+    .arguments({
+      sub: a.string().required(),
+    })
+    .authorization((allow) => [allow.group('ADMINS')])
+    .handler(a.handler.function(deleteUserFn))
     .returns(a.json()),
 });
 

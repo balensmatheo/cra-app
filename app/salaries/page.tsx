@@ -22,9 +22,10 @@ import EditIcon from '@mui/icons-material/Edit';
 import AddIcon from '@mui/icons-material/Add';
 import PersonAddRoundedIcon from '@mui/icons-material/PersonAddRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
-import { getCurrentUser } from 'aws-amplify/auth';
+import { getCurrentUser, fetchAuthSession } from 'aws-amplify/auth';
 import type { Schema } from '@/amplify/data/resource';
 import { generateClient } from 'aws-amplify/data';
 import Snackbar from '@mui/material/Snackbar';
@@ -57,6 +58,9 @@ export default function SalariesPage() {
   const [newGroupsSel, setNewGroupsSel] = useState<string[]>(['USERS']);
   const [creating, setCreating] = useState(false);
   const [toast, setToast] = useState<{open:boolean; msg:string; sev:'success'|'error'|'info'}>({open:false,msg:'',sev:'success'});
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<PoolUser | null>(null);
 
   const validateEmail = (email: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
@@ -70,7 +74,13 @@ export default function SalariesPage() {
         const user = await getCurrentUser();
         setMeSub((user as any)?.userId || null);
       } catch {}
-      // Try protected listUsers to infer admin and populate
+      // Determine admin rights from token groups
+      try {
+        const { tokens } = await fetchAuthSession();
+        const groups = (tokens?.idToken?.payload as any)?.['cognito:groups'] as string[] | undefined;
+        if (mounted) setMeIsAdmin(Array.isArray(groups) && groups.includes('ADMINS'));
+      } catch {}
+      // List users (now allowed for USERS, too)
       try {
         const { data, errors } = await client.queries.listUsers({ search: q || undefined });
         console.log('[Salaries] listUsers result:', { data, errors });
@@ -88,13 +98,11 @@ export default function SalariesPage() {
         console.table(list);
         if (mounted) {
           setUsers(list);
-          setMeIsAdmin(true);
         }
       } catch (e) {
-          console.error('[Salaries] listUsers failed:', e);
-          // Fallback minimal: show only current user if we cannot list pool users
-          if (mounted) setUsers(prev => prev.length ? prev : (meSub ? [{ sub: meSub, email: '', given_name: 'Moi', family_name: '', enabled: true, status: 'CONFIRMED', groups: meIsAdmin ? ['ADMINS'] : ['USERS'] }] : []));
-          if (mounted) setMeIsAdmin(false);
+        console.error('[Salaries] listUsers failed:', e);
+        // Fallback minimal: show only current user if we cannot list pool users
+        if (mounted) setUsers(prev => prev.length ? prev : (meSub ? [{ sub: meSub, email: '', given_name: 'Moi', family_name: '', enabled: true, status: 'CONFIRMED', groups: [] }] : []));
       } finally {
         if (mounted) setLoading(false);
       }
@@ -196,6 +204,16 @@ export default function SalariesPage() {
                   {meIsAdmin && (
                     <IconButton size="small" onClick={()=>goToCra(u.sub, true)} title="Ouvrir en édition (admin)">
                       <EditIcon fontSize="small" />
+                    </IconButton>
+                  )}
+                  {meIsAdmin && !isAdmin && (
+                    <IconButton
+                      size="small"
+                      title="Supprimer l'utilisateur"
+                      onClick={()=>{ setDeleteTarget(u); setDeleteOpen(true); }}
+                      disabled={u.sub === meSub}
+                    >
+                      <DeleteOutlineIcon fontSize="small" />
                     </IconButton>
                   )}
                 </Box>
@@ -344,6 +362,87 @@ export default function SalariesPage() {
       <Snackbar open={toast.open} autoHideDuration={4000} onClose={()=>setToast(s=>({...s,open:false}))}>
         <Alert severity={toast.sev} onClose={()=>setToast(s=>({...s,open:false}))}>{toast.msg}</Alert>
       </Snackbar>
+
+      {/* Delete confirmation dialog (admin) */}
+      {meIsAdmin && (
+        <Dialog
+          open={deleteOpen}
+          onClose={()=>!deleting && setDeleteOpen(false)}
+          maxWidth="xs"
+          fullWidth
+        >
+          <DialogTitle>Supprimer l'utilisateur ?</DialogTitle>
+          <DialogContent dividers>
+            <Typography variant="body2" sx={{ mb: 1 }}>
+              Cette action est irréversible et supprimera le compte de l'utilisateur sélectionné.
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Vous ne pouvez pas supprimer un administrateur ni votre propre compte via cette interface.
+            </Typography>
+            {deleteTarget && (
+              <Box sx={{ mt: 1.5, p:1.25, border:'1px solid #eee', borderRadius:1 }}>
+                <Typography variant="body2" sx={{ fontWeight:600 }}>
+                  {(deleteTarget.given_name||'') + ' ' + (deleteTarget.family_name||'') || deleteTarget.email || deleteTarget.sub}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">{deleteTarget.email}</Typography>
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={()=>setDeleteOpen(false)} disabled={deleting}>Annuler</Button>
+            <Button
+              color="error"
+              variant="contained"
+              disabled={deleting || !deleteTarget}
+              onClick={async ()=>{
+                if (!deleteTarget) return;
+                setDeleting(true);
+                try {
+                  const { data, errors } = await client.mutations.deleteUser({ sub: deleteTarget.sub });
+                  if (errors) throw new Error(errors[0]?.message || 'Erreur suppression');
+                  const payload = typeof data === 'string' ? JSON.parse(data as any) : (data as any);
+                  if (payload?.ok && payload?.deleted) {
+                    setToast({ open:true, msg:"Utilisateur supprimé", sev:'success' });
+                  } else if (payload?.ok && payload?.reason === 'not_found') {
+                    setToast({ open:true, msg:"Utilisateur introuvable (déjà supprimé)", sev:'info' });
+                  } else if (payload?.reason === 'target_is_admin') {
+                    setToast({ open:true, msg:"Impossible de supprimer un administrateur", sev:'error' });
+                  } else if (payload?.reason === 'cannot_delete_self') {
+                    setToast({ open:true, msg:"Vous ne pouvez pas supprimer votre propre compte", sev:'error' });
+                  } else {
+                    setToast({ open:true, msg:"Suppression impossible", sev:'error' });
+                  }
+                  setDeleteOpen(false);
+                  setDeleteTarget(null);
+                  // Refresh list
+                  try {
+                    const { data: data2, errors: err2 } = await client.queries.listUsers({ search: q || undefined });
+                    if (!err2) {
+                      const payload2 = typeof data2 === 'string' ? JSON.parse(data2 as any) : (data2 as any);
+                      const list = (((payload2 as any)?.users) || []).map((u: any) => ({
+                        sub: u.username,
+                        email: u.email,
+                        given_name: u.given_name,
+                        family_name: u.family_name,
+                        enabled: u.enabled,
+                        status: u.status,
+                        groups: u.groups || [],
+                      } as PoolUser));
+                      setUsers(list);
+                    }
+                  } catch {}
+                } catch (e:any) {
+                  setToast({ open:true, msg:e?.message || 'Erreur suppression', sev:'error' });
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+            >
+              {deleting ? <CircularProgress size={18} sx={{ color:'#fff' }} /> : 'Supprimer'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
     </Box>
   );
 }
