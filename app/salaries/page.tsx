@@ -16,13 +16,16 @@ import DialogActions from '@mui/material/DialogActions';
 import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme } from '@mui/material/styles';
 import Autocomplete from '@mui/material/Autocomplete';
+import Checkbox from '@mui/material/Checkbox';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
+import Badge from '@mui/material/Badge';
 import SearchIcon from '@mui/icons-material/Search';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import EditIcon from '@mui/icons-material/Edit';
 import AddIcon from '@mui/icons-material/Add';
 import PersonAddRoundedIcon from '@mui/icons-material/PersonAddRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import Button from '@mui/material/Button';
 import IconButton from '@mui/material/IconButton';
 import { getCurrentUser, fetchAuthSession } from 'aws-amplify/auth';
@@ -61,6 +64,16 @@ export default function SalariesPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<PoolUser | null>(null);
+  // Multi-select and actions
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [actionsEl, setActionsEl] = useState<null | HTMLElement>(null);
+  const actionsOpen = Boolean(actionsEl);
+  const openActions = (e: React.MouseEvent<HTMLButtonElement>) => setActionsEl(e.currentTarget);
+  const closeActions = () => setActionsEl(null);
+  const toggleSelected = (sub: string) => setSelected(prev => { const s = new Set(prev); if (s.has(sub)) s.delete(sub); else s.add(sub); return s; });
+  const clearSelection = () => setSelected(new Set());
+  const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+  const [batchDeleting, setBatchDeleting] = useState(false);
 
   const validateEmail = (email: string): boolean => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
@@ -127,10 +140,26 @@ export default function SalariesPage() {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Box sx={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:2, mb: 2 }}>
+      <Box sx={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:2, mb: 2, flexWrap:'wrap' }}>
         <Typography variant="h5" sx={{ fontWeight: 700, color: '#894991' }}>Salariés</Typography>
         {meIsAdmin && (
-          <Button variant="contained" startIcon={<AddIcon />} onClick={()=>setInviteOpen(true)} sx={{ bgcolor:'#894991', '&:hover':{ bgcolor:'#6a3a7a' }}}>Inviter un utilisateur</Button>
+          <Box sx={{ display:'flex', gap:1, alignItems:'center' }}>
+            <Badge color="secondary" badgeContent={selected.size || null} overlap="circular">
+              <Button
+                variant="outlined"
+                onClick={openActions}
+                disabled={selected.size === 0}
+                sx={{ textTransform:'none' }}
+              >Actions</Button>
+            </Badge>
+            <Menu anchorEl={actionsEl} open={actionsOpen} onClose={closeActions} anchorOrigin={{ vertical:'bottom', horizontal:'left' }}>
+              <MenuItem
+                disabled={selected.size === 0}
+                onClick={() => { closeActions(); setBatchDeleteOpen(true); }}
+              >Supprimer l'utilisateur</MenuItem>
+            </Menu>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={()=>setInviteOpen(true)} sx={{ bgcolor:'#894991', '&:hover':{ bgcolor:'#6a3a7a' }}}>Inviter un utilisateur</Button>
+          </Box>
         )}
       </Box>
       <Box sx={{ display:'flex', alignItems:'center', gap:2, mb:2, flexWrap:'wrap' }}>
@@ -178,18 +207,43 @@ export default function SalariesPage() {
             const canEdit = meIsAdmin; // only admins can edit CRA, others read-only
             return (
               <Box key={u.sub} sx={{
-                p:2,
-                borderRadius: 2,
+                p: 2,
+                borderRadius: 3,
                 border: '1px solid #eee',
-                background:'#fff',
-                display:'flex',
-                gap:2,
-                alignItems:'center'
+                background: 'linear-gradient(180deg, #ffffff 0%, #fcfbfd 100%)',
+                display: 'flex',
+                gap: 2,
+                alignItems: 'center',
+                transition: 'box-shadow 0.2s ease, transform 0.2s ease, border-color 0.2s ease',
+                '&:hover': {
+                  borderColor: '#e7dff0',
+                  boxShadow: '0 8px 24px rgba(137,73,145,0.10)',
+                  transform: 'translateY(-1px)'
+                }
               }}>
-                <Avatar sx={{ bgcolor:'#f0e6f2', color:'#894991', fontWeight:700 }}>{initials || 'U'}</Avatar>
+                {meIsAdmin && (
+                  <Checkbox
+                    checked={selected.has(u.sub)}
+                    onChange={() => toggleSelected(u.sub)}
+                    size="small"
+                    inputProps={{ 'aria-label': 'Sélectionner l\'utilisateur' }}
+                  />
+                )}
+                <Avatar sx={{
+                  bgcolor: 'transparent',
+                  color: '#6a3a7a',
+                  fontWeight: 700,
+                  width: 40,
+                  height: 40,
+                  fontSize: 14,
+                  background: 'linear-gradient(135deg, #f4e9f6 0%, #ece3f1 100%)',
+                  border: '1px solid #efe7f3'
+                }}>
+                  {initials || 'U'}
+                </Avatar>
                 <Box sx={{ flex:1, minWidth:0 }}>
-                  <Typography noWrap sx={{ fontWeight:600 }}>{name}</Typography>
-                  <Typography variant="body2" noWrap color="text.secondary">{u.email}</Typography>
+                  <Typography noWrap sx={{ fontWeight:700, color:'#4a2a57', letterSpacing: 0.2, fontSize: '0.95rem' }}>{name}</Typography>
+                  <Typography variant="caption" noWrap color="text.secondary">{u.email}</Typography>
                   <Box sx={{ mt: 0.5, display:'flex', gap:1, flexWrap:'wrap' }}>
                     {isAdmin && <Chip size="small" label="Admin" color="secondary" variant="outlined" />}
                     {u.enabled === false && <Chip size="small" label="Désactivé" color="warning" variant="outlined" />}
@@ -204,16 +258,6 @@ export default function SalariesPage() {
                   {meIsAdmin && (
                     <IconButton size="small" onClick={()=>goToCra(u.sub, true)} title="Ouvrir en édition (admin)">
                       <EditIcon fontSize="small" />
-                    </IconButton>
-                  )}
-                  {meIsAdmin && !isAdmin && (
-                    <IconButton
-                      size="small"
-                      title="Supprimer l'utilisateur"
-                      onClick={()=>{ setDeleteTarget(u); setDeleteOpen(true); }}
-                      disabled={u.sub === meSub}
-                    >
-                      <DeleteOutlineIcon fontSize="small" />
                     </IconButton>
                   )}
                 </Box>
@@ -271,6 +315,7 @@ export default function SalariesPage() {
                 fullWidth
                 autoFocus
                 margin="none"
+                sx={{ mt: 1.5 }}
                 error={!!newEmail && !validateEmail(newEmail)}
                 helperText={!!newEmail && !validateEmail(newEmail) ? 'Adresse email invalide' : ' '}
               />
@@ -439,6 +484,102 @@ export default function SalariesPage() {
               }}
             >
               {deleting ? <CircularProgress size={18} sx={{ color:'#fff' }} /> : 'Supprimer'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
+
+      {/* Batch delete confirmation */}
+      {meIsAdmin && (
+        <Dialog open={batchDeleteOpen} onClose={()=>!batchDeleting && setBatchDeleteOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle>Supprimer {selected.size} utilisateur(s) ?</DialogTitle>
+          <DialogContent dividers>
+            <Typography variant="body2" sx={{ mb: 1 }}>
+              Cette action est irréversible et supprimera le(s) compte(s) sélectionné(s).
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Les administrateurs et votre propre compte seront ignorés.
+            </Typography>
+            <Box sx={{ mt: 1.5, display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(220px, 1fr))', gap:1 }}>
+              {Array.from(selected).map(sub => {
+                const u = users.find(x => x.sub === sub);
+                if (!u) return null;
+                const name = [u.given_name, u.family_name].filter(Boolean).join(' ') || u.email || u.sub;
+                const admin = (u.groups || []).includes('ADMINS');
+                const self = meSub && meSub === u.sub;
+                return (
+                  <Box key={sub} sx={{ p:1, border:'1px solid #eee', borderRadius:1, opacity: admin || self ? 0.6 : 1 }}>
+                    <Typography variant="body2" sx={{ fontWeight:600 }}>{name}</Typography>
+                    <Typography variant="caption" color="text.secondary">{u.email}</Typography>
+                    {(admin || self) && (
+                      <Typography variant="caption" color="error" sx={{ display:'block' }}>
+                        {admin ? 'Admin - ignoré' : 'Votre compte - ignoré'}
+                      </Typography>
+                    )}
+                  </Box>
+                );
+              })}
+            </Box>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={()=>setBatchDeleteOpen(false)} disabled={batchDeleting}>Annuler</Button>
+            <Button
+              color="error"
+              variant="contained"
+              disabled={batchDeleting || selected.size === 0}
+              onClick={async ()=>{
+                setBatchDeleting(true);
+                try {
+                  const subs = Array.from(selected);
+                  const targets = subs
+                    .map(s => users.find(u => u.sub === s))
+                    .filter((u): u is PoolUser => !!u)
+                    .filter(u => !(u.groups || []).includes('ADMINS'))
+                    .filter(u => u.sub !== meSub);
+                  const results = await Promise.allSettled(targets.map(async (u) => {
+                    const { data, errors } = await client.mutations.deleteUser({ sub: u.sub });
+                    const payload = typeof data === 'string' ? JSON.parse(data as any) : (data as any);
+                    return { u, errors, payload };
+                  }));
+                  const deleted = results.filter(r => r.status === 'fulfilled' && (r.value as any)?.payload?.ok && (r.value as any)?.payload?.deleted).length;
+                  const skipped = subs.length - targets.length;
+                  const failures = results.filter(r => r.status === 'rejected' || (r as any)?.value?.payload?.ok === false).length;
+                  if (deleted > 0 && failures === 0) {
+                    setToast({ open:true, msg: `${deleted} utilisateur(s) supprimé(s)`, sev:'success' });
+                  } else if (deleted > 0 && failures > 0) {
+                    setToast({ open:true, msg: `${deleted} supprimé(s), ${failures} échec(s)`, sev:'info' });
+                  } else if (deleted === 0 && failures > 0) {
+                    setToast({ open:true, msg: `Aucune suppression. ${failures} échec(s)`, sev:'error' });
+                  } else {
+                    setToast({ open:true, msg: `Aucune suppression effectuée`, sev:'info' });
+                  }
+                  setBatchDeleteOpen(false);
+                  clearSelection();
+                  // Refresh list
+                  try {
+                    const { data: data2, errors: err2 } = await client.queries.listUsers({ search: q || undefined });
+                    if (!err2) {
+                      const payload2 = typeof data2 === 'string' ? JSON.parse(data2 as any) : (data2 as any);
+                      const list = (((payload2 as any)?.users) || []).map((u: any) => ({
+                        sub: u.username,
+                        email: u.email,
+                        given_name: u.given_name,
+                        family_name: u.family_name,
+                        enabled: u.enabled,
+                        status: u.status,
+                        groups: u.groups || [],
+                      } as PoolUser));
+                      setUsers(list);
+                    }
+                  } catch {}
+                } catch (e:any) {
+                  setToast({ open:true, msg: e?.message || 'Erreur suppression', sev:'error' });
+                } finally {
+                  setBatchDeleting(false);
+                }
+              }}
+            >
+              {batchDeleting ? <CircularProgress size={18} sx={{ color:'#fff' }} /> : 'Supprimer'}
             </Button>
           </DialogActions>
         </Dialog>
