@@ -6,7 +6,7 @@ import Box from '@mui/material/Box';
 export default function SalariesLayout({ children }: { children: React.ReactNode }) {
   return (
     <CRAProvider>
-      <Box sx={{ minHeight: '100vh', background: '#f5f5f5' }}>
+  <Box sx={{ minHeight: '100vh', background: '#f5f5f5' }}>
         <Navbar />
         <Box sx={{ minHeight: 'calc(100vh - 72px)' }}>
           {children}

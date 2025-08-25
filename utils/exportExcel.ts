@@ -74,6 +74,14 @@ export async function exportExcel({
     autres: 27,
   };
 
+  // Helper: format a Date to local YYYY-MM-DD (avoid UTC shift)
+  const toLocalYMD = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${dd}`;
+  };
+
   SECTION_LABELS.forEach(({ key }) => {
     const startRow = sectionStartRows[key];
 
@@ -90,14 +98,19 @@ export async function exportExcel({
         if (col > 35) return;
 
         const cell = excelRow.getCell(col);
-        const dateStr = d.toISOString().slice(0, 10);
+        // Use local date keys (grid uses local YYYY-MM-DD)
+        const dateStr = toLocalYMD(d);
         const rawValue = catData[dateStr] ?? "";
 
         let value: string | number | null = null;
         if (rawValue && rawValue.trim() !== "") {
-          const numValue = Number(rawValue);
+          // Normalize French decimal comma to dot for numeric parsing
+          const normalized = rawValue.replace(/\s/g, "").replace(",", ".");
+          const numValue = Number(normalized);
           if (!isNaN(numValue)) {
             value = numValue;
+            // Force display with 2 decimals to avoid 0.25 -> 0.3 rounding by template formats
+            cell.numFmt = "0.00";
           } else {
             value = rawValue.trim();
           }

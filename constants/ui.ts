@@ -12,6 +12,8 @@ export const CATEGORY_OPTIONS: Record<SectionKey, string[]> = {
   ],
   autres: [
   "Congé",
+  "Séminaire",
+  "Férié",
   "Maladie / Arrêt",
   "Inter-contrat",
   "RTT",

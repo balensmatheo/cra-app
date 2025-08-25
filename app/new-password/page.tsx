@@ -135,7 +135,7 @@ function NewPasswordContent() {
             !firstName.trim() ||
             !lastName.trim()
           }
-          sx={{ background:'#894991', '&:hover':{ background:'#6a3a7a' }, width:'100%', fontWeight:600 }}
+          sx={{ backgroundColor:'primary.main', '&:hover':{ background:'#6a3a7a' }, width:'100%', fontWeight:600 }}
         >
           {loading ? <CircularProgress size={24} sx={{ color:'#fff' }} /> : 'Valider'}
         </Button>

@@ -4,7 +4,6 @@ import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '@/amplify/data/resource';
 import { fetchAuthSession } from 'aws-amplify/auth';
 import { getBusinessDaysCount } from '@/utils/businessDays';
-import { CATEGORY_OPTIONS } from '@/constants/ui';
 
 const client = generateClient<Schema>();
 
@@ -58,11 +57,13 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
   const [ownerReady, setOwnerReady] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const savedSignatureRef = useRef<string>("");
+  const [monthLocked, setMonthLocked] = useState<boolean>(false);
 
   const currentSignature = useMemo(() => {
+    // Normalize values to avoid NaN/undefined toggling the signature and causing sticky dirty states
     const norm = entries
-      .map(e => ({ d: e.date, c: (e as any).categoryId, v: e.value, m: e.comment || '' }))
-      .sort((a,b) => (a.d + a.c).localeCompare(b.d + b.c))
+      .map(e => ({ d: e.date, c: (e as any).categoryId, v: (Number.isNaN(e.value as any) ? 0 : (e.value || 0)), m: (e.comment || '') }))
+      .sort((a,b) => (String(a.d) + String(a.c)).localeCompare(String(b.d) + String(b.c)))
       .map(o => `${o.d}:${o.c}:${o.v}:${o.m}`)
       .join('|');
     return norm;
@@ -87,7 +88,8 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
     const date = new Date(year, monthNum - 1, 1);
     while (date.getMonth() === monthNum - 1) {
       const day = date.getDay();
-      const dStr = date.toISOString().slice(0,10);
+  // Format as local YYYY-MM-DD (avoid UTC shift)
+  const dStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
       if (day !== 0 && day !== 6 && !removeSet.has(dStr)) count++;
       date.setDate(date.getDate() + 1);
     }
@@ -110,24 +112,10 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
     try {
       const { data: cats } = await client.models.Category.list({});
       const map: Record<string, { kind?: string | null }> = {};
-
-      // Determine expected kind by label using frontend options
-      const expectedKindByLabel: Record<string, 'facturee' | 'non_facturee' | 'autre'> = {} as any;
-      (CATEGORY_OPTIONS.facturees || []).forEach(l => { expectedKindByLabel[l] = 'facturee'; });
-      (CATEGORY_OPTIONS.non_facturees || []).forEach(l => { expectedKindByLabel[l] = 'non_facturee'; });
-      (CATEGORY_OPTIONS.autres || []).forEach(l => { expectedKindByLabel[l] = 'autre'; });
-
-      // Normalize backend kinds when labels are known (e.g., Congé => 'autre')
+      // Trust backend kinds as defined by admins
       for (const c of (cats || [])) {
-        const label = (c as any).label as string;
         const currentKind = (c as any).kind as string | null | undefined;
-        const expected = expectedKindByLabel[label];
-        if (expected && currentKind !== expected) {
-          try { await client.models.Category.update({ id: c.id, kind: expected as any }); } catch {}
-          map[c.id] = { kind: expected };
-        } else {
-          map[c.id] = { kind: currentKind };
-        }
+        map[c.id] = { kind: currentKind };
       }
       setCategoriesMap(map);
     } catch {}
@@ -141,22 +129,18 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
     } catch {}
   }, [month]);
 
-  useEffect(() => { fetchCategories(); fetchSpecialDays(); }, [fetchCategories, fetchSpecialDays]);
-  // Écoute des événements broadcast pour rafraîchissement immédiat sans attendre l'intervalle
-  useEffect(() => {
-    const onCat = () => { fetchCategories(); };
-    const onSD = () => { fetchSpecialDays(); };
-    if (typeof window !== 'undefined') {
-      window.addEventListener('cra:categories-updated', onCat as any);
-      window.addEventListener('cra:special-days-updated', onSD as any);
+  // Fetch month lock state
+  const fetchMonthLock = useCallback(async () => {
+    try {
+      const { data } = await client.models.MonthLock.list({ filter: { month: { eq: month } } });
+      const lock = (data || [])[0] as any;
+      setMonthLocked(Boolean(lock?.locked));
+    } catch {
+      setMonthLocked(false);
     }
-    return () => {
-      if (typeof window !== 'undefined') {
-        window.removeEventListener('cra:categories-updated', onCat as any);
-        window.removeEventListener('cra:special-days-updated', onSD as any);
-      }
-    };
-  }, [fetchCategories, fetchSpecialDays]);
+  }, [month]);
+
+  useEffect(() => { fetchCategories(); fetchSpecialDays(); fetchMonthLock(); }, [fetchCategories, fetchSpecialDays, fetchMonthLock]);
   useEffect(() => {
     const id = setInterval(() => { fetchCategories(); }, 60000); // refresh kinds every 60s (dynamic comment rules)
     return () => clearInterval(id);
@@ -167,6 +151,8 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
   const isOwner = craOwnerSub && effectiveOwnerSub ? craOwnerSub === effectiveOwnerSub : true; // compare against targeted owner
   // If viewing someone else's CRA and not admin, force read-only regardless of status
   const viewingOther = effectiveOwnerSub && ownerSubRef.current && effectiveOwnerSub !== ownerSubRef.current;
+  // When admin explicitly enables edit mode, allow overriding status locks for persistence
+  const allowOverride = isAdmin && !!editMode;
   // New policy: default to read-only when viewing; admin must opt-in via editMode to modify others.
   // Owners can edit their own CRA (subject to status) without editMode.
   const readOnly = (() => {
@@ -177,6 +163,8 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
       // Admin but no edit intent => read-only
       if (!editMode) return true;
     }
+  // Global month lock: block edits for everyone (admins included) unless explicit override is later added
+  if (monthLocked) return true;
     // Status locks always apply unless admin+editMode
     if (status === 'closed') return !(isAdmin && editMode);
     if (status === 'validated') return !(isAdmin && editMode);
@@ -243,11 +231,12 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
         try {
           const allowCreate = !targetSub || targetSub === ownerSubRef.current || (isAdmin && !!editMode);
           if (allowCreate) {
-            const createRes = await client.models.Cra.create({ month });
+            const targetOwner = targetSub && targetSub.length > 0 ? targetSub : ownerSubRef.current;
+            const createRes = await client.models.Cra.create({ month, owner: targetOwner as any, status: 'draft' as any });
             if (createRes.data) {
               setCraId(createRes.data.id);
               setStatus('draft');
-              setCraOwnerSub(ownerSubRef.current);
+              setCraOwnerSub(targetOwner || ownerSubRef.current);
               setEntries([]);
               savedSignatureRef.current = "";
             }
@@ -263,10 +252,23 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
 
   useEffect(() => { if (ownerReady) loadCra(); }, [loadCra, ownerReady]);
 
+  // React to external broadcast when entries are updated (e.g., leave approval sync)
+  useEffect(() => {
+    const onEntries = () => { loadCra(); };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('cra:entries-updated', onEntries as any);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('cra:entries-updated', onEntries as any);
+      }
+    };
+  }, [loadCra]);
+
   const updateEntry = useCallback((partial: Partial<Schema['CraEntry']['type']> & { id?: string; date: string; categoryId: any; value: number; comment?: string }) => {
-    if (readOnly) return;
+    if (readOnly && !isAdmin) return;
     // Double-lock: vérifier status courant + signature backend en différé (anti race)
-    if (status === 'validated' || status === 'closed') return;
+  if ((status === 'validated' || status === 'closed') && !allowOverride) return;
     // Vérification asynchrone du statut le plus récent avant de confirmer modification locale
     (async () => {
       if (!craId) return;
@@ -275,7 +277,7 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
         const latestStatus = (latest.data as any)?.status as CraStatus | undefined;
         if (latestStatus && latestStatus !== status) {
           setStatus(latestStatus);
-          if (latestStatus === 'validated' || latestStatus === 'closed') return; // abort
+      if ((latestStatus === 'validated' || latestStatus === 'closed') && !allowOverride) return; // abort unless admin override
         }
       } catch { /* ignore */ }
       setEntries(prev => {
@@ -286,21 +288,21 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
         return [...prev, { id: tempId, craId: craId || '', date: partial.date, categoryId: partial.categoryId, value: partial.value, comment: partial.comment } as any];
       });
     })();
-  }, [craId, status, readOnly]);
+  }, [craId, status, readOnly, allowOverride]);
 
   // Persist helper (moved above autosave effect to avoid temporal dead zone)
   const persistEntries = useCallback(async () => {
   if (!craId) return;
-  if (readOnly) return;
-    if (status === 'validated' || status === 'closed') return; // guard
+  if (readOnly && !isAdmin) return;
+    if ((status === 'validated' || status === 'closed') && !allowOverride) return; // allow admin override
     // Re-fetch latest CRA status to enforce backend immutability semantics
     try {
       const latest = await client.models.Cra.get({ id: craId });
       const latestStatus = (latest.data as any)?.status as CraStatus | undefined;
       if (latestStatus && latestStatus !== status) {
         setStatus(latestStatus);
-        if (latestStatus === 'validated' || latestStatus === 'closed') {
-          // Abort persistence if backend already locked it
+        if ((latestStatus === 'validated' || latestStatus === 'closed') && !allowOverride) {
+          // Abort only when not allowed to override
           return;
         }
       }
@@ -309,28 +311,63 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
   const safeEntries = entries.filter(e => !(Number.isNaN(e.value)));
   const newOnes = safeEntries.filter(e => e.id.startsWith('temp-'));
   const existing = safeEntries.filter(e => !e.id.startsWith('temp-'));
-  // Supprimer côté backend les entrées qui n'existent plus localement
-  // Sécurité: n'effectuer ces suppressions que si l'on a effectivement des entrées locales existantes à conserver.
-  if (existing.length > 0) {
+  // Supprimer côté backend les entrées qui n'existent plus localement (par clé categoryId|date)
+  // Utilise une reconciliation par clés désirées afin de supporter la suppression totale également.
+  try {
+    // Identify protected categories (Congé, Séminaire) by label so we don't delete their entries
+    let protectedCatIds = new Set<string>();
     try {
-      const { data: persisted } = await (client.models.CraEntry.list as any)({ filter: { craId: { eq: craId } } });
-      const persistedList = (persisted || []) as Schema['CraEntry']['type'][];
-      const keepIds = new Set(existing.map(e => e.id));
-      for (const p of persistedList) {
-        if (!keepIds.has(p.id)) {
-          try { await client.models.CraEntry.delete({ id: p.id }); } catch { /* ignore */ }
+      const { data: catsRaw } = await (client.models.Category.list as any)({});
+      const cats = (catsRaw || []) as any[];
+      cats.forEach(c => {
+        const lbl = String(c.label || '').toLowerCase();
+        if (lbl === 'congé' || lbl === 'conge' || lbl === 'séminaire' || lbl === 'seminaire') {
+          protectedCatIds.add(String(c.id));
         }
-      }
+      });
     } catch { /* ignore */ }
-  }
+    const desiredKeys = new Set<string>();
+    // Entrées locales actuelles
+    safeEntries.forEach(e => {
+      const cid = (e as any).categoryId as string; const d = e.date;
+      if (cid && d) desiredKeys.add(`${cid}|${d}`);
+    });
+    // Récupérer les entrées persistées
+    const { data: persisted } = await (client.models.CraEntry.list as any)({ filter: { craId: { eq: craId } } });
+    const persistedList = (persisted || []) as Schema['CraEntry']['type'][];
+    for (const p of persistedList) {
+      const key = `${(p as any).categoryId as string}|${p.date}`;
+      const cmt = String(((p as any)?.comment) || '');
+      const srcType = String(((p as any)?.sourceType) || '');
+      const isProtected = srcType === 'leave' || srcType === 'seminar' || cmt.includes('[CONGE]') || cmt.includes('[SEMINAIRE]') || protectedCatIds.has(String((p as any).categoryId));
+      if (!desiredKeys.has(key) && !isProtected) {
+        try { await client.models.CraEntry.delete({ id: p.id }); } catch { /* ignore */ }
+      }
+    }
+  } catch { /* ignore */ }
     for (const n of newOnes) {
       await (client.models.CraEntry.create as any)({ craId, date: n.date, categoryId: n.categoryId, value: n.value, comment: n.comment });
     }
     for (const ex of existing) {
       await client.models.CraEntry.update({ id: ex.id, value: ex.value, comment: ex.comment });
     }
+  // Refresh local entries from backend and align saved signature
+  try {
+    const { data: fresh } = await (client.models.CraEntry.list as any)({ filter: { craId: { eq: craId } } });
+    const freshList = (fresh || []) as Schema['CraEntry']['type'][];
+    setEntries(freshList);
+    try {
+      type Sig = { d: string; c: string; v: number; m: string };
+      const norm = freshList
+        .map<Sig>((e) => ({ d: e.date, c: (e as any).categoryId as string, v: (Number.isNaN(e.value as any) ? 0 : (e.value as number || 0)), m: (e.comment as string) || '' }))
+        .sort((a: Sig, b: Sig) => (a.d + a.c).localeCompare(b.d + b.c))
+        .map((o: Sig) => `${o.d}:${o.c}:${o.v}:${o.m}`)
+        .join('|');
+      savedSignatureRef.current = norm;
+    } catch { /* ignore */ }
+  } catch { /* ignore refresh */ }
   setLastSavedAt(new Date());
-  }, [entries, craId, status, readOnly]);
+  }, [entries, craId, status, readOnly, allowOverride]);
 
   // Persist a batch of pending values/comments directly (used by grid Save to avoid timing issues)
   const persistBatch = useCallback(async (
@@ -339,8 +376,8 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
     pendingDeletes?: Record<string, string[]>
   ) => {
   if (!craId) return;
-  if (readOnly) return;
-    if (status === 'validated' || status === 'closed') return;
+  if (readOnly && !isAdmin) return;
+    if ((status === 'validated' || status === 'closed') && !allowOverride) return;
     setIsSaving(true);
     // Re-check latest status to avoid persisting on locked CRA
     try {
@@ -348,7 +385,7 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
       const latestStatus = (latest.data as any)?.status as CraStatus | undefined;
       if (latestStatus && latestStatus !== status) {
         setStatus(latestStatus);
-        if (latestStatus === 'validated' || latestStatus === 'closed') return;
+        if ((latestStatus === 'validated' || latestStatus === 'closed') && !allowOverride) return;
       }
     } catch { /* ignore */ }
 
@@ -359,23 +396,42 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
       byKey.set(k, e);
     });
 
+  // Conservative mode: do not delete persisted entries unless explicitly cleared by the user (pendingDeletes).
+  // This avoids unintended loss of lines when local state misses some persisted cells.
+
     // Create or update values
     for (const [catId, dates] of Object.entries(pendingValues || {})) {
       for (const [date, value] of Object.entries(dates)) {
-        if (Number.isNaN(value as any)) continue;
+        if (Number.isNaN(value as any)) {
+          // Coerce NaN to 0 to avoid dropping the entry silently
+          (dates as any)[date] = 0 as any;
+        }
         const key = `${catId}|${date}`;
         const existing = byKey.get(key);
         if (existing) {
-          try { await client.models.CraEntry.update({ id: existing.id, value }); } catch {}
+          try { await client.models.CraEntry.update({ id: existing.id, value: (dates as any)[date] }); } catch {}
         } else {
-          try { await (client.models.CraEntry.create as any)({ craId, date, categoryId: catId as any, value }); } catch {}
+          try { await (client.models.CraEntry.create as any)({ craId, date, categoryId: catId as any, value: (dates as any)[date] }); } catch {}
         }
       }
     }
 
     // Apply deletions for cleared cells (remove entries when the user leaves a day empty)
     if (pendingDeletes && Object.keys(pendingDeletes).length > 0) {
+      // Identify protected categories to never delete automatically
+      let protectedCatIds = new Set<string>();
+      try {
+        const { data: catsRaw } = await (client.models.Category.list as any)({});
+        const cats = (catsRaw || []) as any[];
+        cats.forEach(c => {
+          const lbl = String(c.label || '').toLowerCase();
+          if (lbl === 'congé' || lbl === 'conge' || lbl === 'séminaire' || lbl === 'seminaire') {
+            protectedCatIds.add(String(c.id));
+          }
+        });
+      } catch { /* ignore */ }
       for (const [catId, days] of Object.entries(pendingDeletes)) {
+        if (protectedCatIds.has(String(catId))) continue;
         for (const date of days) {
           const key = `${catId}|${date}`;
           const existing = byKey.get(key);
@@ -386,25 +442,36 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
       }
     }
 
-    // Refresh entries to ensure subsequent operations are consistent and remove entries not present anymore
+    // Refresh entries then apply comment updates, await them, and refresh again so UI reflects new comments
     try {
-  const { data: fresh } = await (client.models.CraEntry.list as any)({ filter: { craId: { eq: craId } } });
+      const { data: fresh } = await (client.models.CraEntry.list as any)({ filter: { craId: { eq: craId } } });
       const freshList = (fresh || []) as Schema['CraEntry']['type'][];
       setEntries(freshList);
-      // Apply comments per category across existing entries
+      // Apply comments per category across existing entries and wait for all updates to complete
+      const commentPromises: Promise<any>[] = [];
       for (const [catId, comment] of Object.entries(pendingComments || {})) {
         freshList
           .filter((e: Schema['CraEntry']['type']) => ((e as any).categoryId as string) === catId)
-          .forEach(async (e: Schema['CraEntry']['type']) => {
-            try { await client.models.CraEntry.update({ id: e.id, value: e.value, comment }); } catch {}
+          .forEach((e: Schema['CraEntry']['type']) => {
+            commentPromises.push(
+              client.models.CraEntry.update({ id: e.id, value: e.value, comment })
+                .catch(() => void 0)
+            );
           });
       }
-  setLastSavedAt(new Date());
-      // Update saved signature to current fresh snapshot to reset dirty flag
+      if (commentPromises.length > 0) {
+        try { await Promise.all(commentPromises); } catch { /* ignore individual failures */ }
+      }
+      // Re-fetch after comment updates so state and signature include updated comments
+      const { data: fresh2 } = await (client.models.CraEntry.list as any)({ filter: { craId: { eq: craId } } });
+      const finalList = (fresh2 || []) as Schema['CraEntry']['type'][];
+      setEntries(finalList);
+      setLastSavedAt(new Date());
+      // Update saved signature to current snapshot (with comments) to reset dirty flag
       try {
         type Sig = { d: string; c: string; v: number; m: string };
-        const norm = freshList
-          .map<Sig>((e) => ({ d: e.date, c: (e as any).categoryId as string, v: e.value as number, m: (e.comment as string) || '' }))
+        const norm = finalList
+          .map<Sig>((e) => ({ d: e.date, c: (e as any).categoryId as string, v: (Number.isNaN(e.value as any) ? 0 : (e.value as number || 0)), m: (e.comment as string) || '' }))
           .sort((a: Sig, b: Sig) => (a.d + a.c).localeCompare(b.d + b.c))
           .map((o: Sig) => `${o.d}:${o.c}:${o.v}:${o.m}`)
           .join('|');
@@ -414,13 +481,13 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
     finally {
       setIsSaving(false);
     }
-  }, [craId, entries, status, readOnly]);
+  }, [craId, entries, status, readOnly, allowOverride]);
 
   // Autosave désactivé : les données ne sont plus persistées automatiquement.
 
   const removeEntry = useCallback((id: string) => {
-  if (readOnly) return;
-    if (status === 'validated' || status === 'closed') return;
+  if (readOnly && !isAdmin) return;
+    if ((status === 'validated' || status === 'closed') && !allowOverride) return;
     (async () => {
       if (!craId) return;
       try {
@@ -428,12 +495,12 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
         const latestStatus = (latest.data as any)?.status as CraStatus | undefined;
         if (latestStatus && latestStatus !== status) {
           setStatus(latestStatus);
-          if (latestStatus === 'validated' || latestStatus === 'closed') return; // abort
+          if ((latestStatus === 'validated' || latestStatus === 'closed') && !allowOverride) return; // abort only when not overriding
         }
       } catch { /* ignore */ }
       setEntries(prev => prev.filter(e => e.id !== id));
     })();
-  }, [craId, status, readOnly]);
+  }, [craId, status, readOnly, allowOverride]);
 
   // Validation rules
   const computeValidation = useCallback(() => {
@@ -453,7 +520,8 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
     while (iter.getMonth() === monthNum - 1) {
       const day = iter.getDay();
       if (day !== 0 && day !== 6) { // weekday
-        const dStr = iter.toISOString().slice(0,10);
+  // Use local date string to match entry dates and specialDays
+  const dStr = `${iter.getFullYear()}-${String(iter.getMonth() + 1).padStart(2, '0')}-${String(iter.getDate()).padStart(2, '0')}`;
         // retirer jours spéciaux exclus déjà soustraits du businessDays (ferie / conge_obligatoire)
         const excluded = specialDays.some(sd => (sd.type === 'ferie' || sd.type === 'conge_obligatoire') && sd.date === dStr);
         if (!excluded && !enteredDays.has(dStr)) missing.push(dStr);
@@ -464,18 +532,26 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
       const preview = missing.slice(0,5).join(', ');
       errors.push(`Jour(s) ouvré(s) sans saisie: ${preview}${missing.length > 5 ? ` ... (+${missing.length - 5})` : ''}. Ajoutez une activité pour chaque jour ouvré.`);
     }
-    // Catégorie & commentaire
+    // Catégorie & commentaire (exigence au niveau de la catégorie, pas par jour)
+    // Règle: si une catégorie (facturée/non facturée) a des heures (>0) sur le mois,
+    // alors au moins un commentaire doit être présent pour cette catégorie.
+    const perCategorySum: Record<string, number> = {};
+    const perCategoryHasComment: Record<string, boolean> = {};
     entries.forEach(e => {
       const catId: any = (e as any).categoryId;
       const date = e.date;
       if (!catId) {
         errors.push(`Une ligne du ${date} a une valeur mais aucune catégorie n'est sélectionnée.`);
-      } else {
-        const kind = categoriesMap[catId]?.kind;
-        if ((kind === 'facturee' || kind === 'non_facturee') && e.value > 0) {
-          if (!e.comment || !e.comment.trim()) {
-            errors.push(`Commentaire requis (${kind === 'facturee' ? 'facturée' : 'non facturée'}) pour le ${date}.`);
-          }
+        return;
+      }
+      perCategorySum[catId] = (perCategorySum[catId] || 0) + (e.value || 0);
+      if (e.comment && e.comment.trim().length > 0) perCategoryHasComment[catId] = true;
+    });
+    Object.entries(perCategorySum).forEach(([catId, sum]) => {
+      const kind = categoriesMap[catId]?.kind;
+      if ((kind === 'facturee' || kind === 'non_facturee') && sum > 0) {
+        if (!perCategoryHasComment[catId]) {
+          errors.push(`Commentaire requis (${kind === 'facturee' ? 'facturée' : 'non facturée'}) pour la catégorie.`);
         }
       }
     });
@@ -495,23 +571,27 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
         const ls = (latest.data as any)?.status as CraStatus | undefined;
         if (ls && ls !== status) {
           setStatus(ls);
-          if (ls === 'validated' || ls === 'closed') { return; }
+          if ((ls === 'validated' || ls === 'closed') && !allowOverride) { return; }
         }
       } catch {}
       // Optionally persist entries (allow callers who already persisted via batch to skip here)
-      if (options?.doPersist !== false) {
+      const shouldPersist = options?.doPersist !== false;
+      if (shouldPersist) {
         await persistEntries();
       }
       if (status === 'draft') {
         await client.models.Cra.update({ id: craId, status: 'saved', isSubmitted: false as any });
         setStatus('saved');
       }
-      // Keep signature aligned; persistEntries or upstream batch may have set it already
-      savedSignatureRef.current = currentSignature;
+      // Keep signature aligned only when we persisted here.
+      // If doPersist === false, persistBatch already refreshed entries and updated the signature.
+      if (shouldPersist) {
+        savedSignatureRef.current = currentSignature;
+      }
     } finally {
       setIsSaving(false);
     }
-  }, [craId, status, persistEntries, currentSignature, isAdmin, isOwner]);
+  }, [craId, status, persistEntries, currentSignature, isAdmin, isOwner, allowOverride]);
 
   const validateCra = useCallback(async () => {
     if (!craId) return false;
@@ -560,10 +640,12 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
     }
   }, [craId, status, currentSignature, readOnly]);
 
-  // Reopen a validated CRA back to 'saved' to allow further edits (owner or admin)
+  // Reopen a validated CRA back to 'saved' to allow further edits.
+  // Policy: allow the current user to reopen their own validated CRA even if the grid is read-only due to status.
   const reopenCra = useCallback(async () => {
-  if (!craId) return false;
-  if (readOnly) return false;
+    if (!craId) return false;
+    // If readOnly is true, permit bypass only when not viewing another user's CRA and status is 'validated'.
+    if (readOnly && !(status === 'validated' && !viewingOther)) return false;
     setIsSaving(true);
     try {
       try {
@@ -576,18 +658,18 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
         if (ls === 'closed') { return false; }
         if (ls !== 'validated') { return false; }
       } catch {}
-  await client.models.Cra.update({ id: craId, status: 'saved', isSubmitted: false as any });
+      await client.models.Cra.update({ id: craId, status: 'saved', isSubmitted: false as any });
       setStatus('saved');
       setLastSavedAt(new Date());
       return true;
     } finally {
       setIsSaving(false);
     }
-  }, [craId, status, readOnly]);
+  }, [craId, status, readOnly, viewingOther]);
 
   const resetAll = useCallback(async () => {
   if (!craId) return;
-  if (readOnly) return;
+  if (readOnly && !isAdmin) return;
     setIsSaving(true);
     try {
       try {
@@ -595,7 +677,7 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
         const ls = (latest.data as any)?.status as CraStatus | undefined;
         if (ls && ls !== status) {
           setStatus(ls);
-          if (ls === 'validated' || ls === 'closed') { return; }
+          if ((ls === 'validated' || ls === 'closed') && !allowOverride) { return; }
         }
       } catch {}
       // delete all existing entries (skip temp ones which are local only)
@@ -611,7 +693,7 @@ export function useCraEntries(month: string, targetSub?: string | null, editMode
     } finally {
       setIsSaving(false);
     }
-  }, [craId, entries, readOnly]);
+  }, [craId, entries, readOnly, allowOverride]);
 
   return {
     craId,

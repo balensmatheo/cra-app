@@ -1,7 +1,6 @@
 import { FC, useMemo, useCallback, memo, useState, useEffect, useRef, forwardRef } from "react";
 import Autocomplete from '@mui/material/Autocomplete';
 import Popper from '@mui/material/Popper';
-import Tooltip from '@mui/material/Tooltip';
 import CheckIcon from '@mui/icons-material/Check';
 import { isValidDayValue } from '../constants/validation';
 import { ALLOWED_DAY_VALUES } from '../constants/ui';
@@ -21,7 +20,12 @@ type DayCellProps = {
 
 const DayCell: FC<DayCellProps> = memo(({ value, record, day, onCellChange, readOnly = false, invalid, options, pending }) => {
   const isWeekend = useMemo(() => day.getDay() === 0 || day.getDay() === 6, [day]);
-  const dayString = useMemo(() => day.toISOString().slice(0, 10), [day]);
+  const dayString = useMemo(() => {
+    const y = day.getFullYear();
+    const m = String(day.getMonth() + 1).padStart(2, '0');
+    const dd = String(day.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+  }, [day]);
   const fullDayName = useMemo(() => day.toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }), [day]);
   const [draft, setDraft] = useState<string>(value);
   const anchorRef = useRef<HTMLSpanElement>(null);
@@ -186,6 +190,7 @@ const DayCell: FC<DayCellProps> = memo(({ value, record, day, onCellChange, read
               }
             } },
             popper: { sx: { zIndex: 1400 } },
+            // listbox is not in TS typings; cast keeps sx customization
             listbox: { sx: {
               p: 0.25,
               '& .MuiAutocomplete-option': {
@@ -198,7 +203,7 @@ const DayCell: FC<DayCellProps> = memo(({ value, record, day, onCellChange, read
               '& .MuiAutocomplete-option[aria-selected="true"]': {
                 backgroundColor: '#eef2f6'
               }
-            } }
+            } } as any
           } as any}
           renderInput={(params) => (
             <div
@@ -227,7 +232,6 @@ const DayCell: FC<DayCellProps> = memo(({ value, record, day, onCellChange, read
                     e.preventDefault();
                     if (!canOpen) return; // no stepping when nothing can be selected
                     const cur = draft === '' ? 0 : Number(draft);
-                    const idx = numericOptions.findIndex(n => n >= cur - 1e-6 && n <= cur + 1e-6);
                     if (e.key === 'ArrowUp') {
                       // next higher allowed value, max 1
                       const next = numericOptions.find(n => n > cur);

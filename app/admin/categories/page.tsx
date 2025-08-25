@@ -97,7 +97,7 @@ export default function AdminCategoriesPage() {
     <Box sx={{p:4}}>
       <Box sx={{ display:'flex', justifyContent:'space-between', alignItems:'center', mb:3 }}>
         <Typography variant="h5" sx={{ fontWeight:600, color:'#894991' }}>Administration - Catégories</Typography>
-        <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate} sx={{ background:'#894991', '&:hover':{ background:'#6a3a7a' } }}>Nouvelle</Button>
+  <Button variant="contained" startIcon={<AddIcon />} onClick={openCreate} sx={{ backgroundColor:'primary.main', '&:hover':{ background:'#6a3a7a' } }}>Nouvelle</Button>
       </Box>
       <Table size="small">
         <TableHead>
@@ -149,7 +149,7 @@ export default function AdminCategoriesPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={closeDialog} size="small">Annuler</Button>
-          <Button variant="contained" size="small" onClick={saveCategory} sx={{ background:'#894991', '&:hover':{ background:'#6a3a7a' } }}>Sauvegarder</Button>
+          <Button variant="contained" size="small" onClick={saveCategory} sx={{ backgroundColor:'primary.main', '&:hover':{ background:'#6a3a7a' } }}>Sauvegarder</Button>
         </DialogActions>
       </Dialog>
 

@@ -116,7 +116,7 @@ const ActivityRow: FC<ActivityRowProps> = memo(({
         />
       </TableCell>
       {days.map((d) => {
-        const dayKey = d.toISOString().slice(0,10);
+        const dayKey = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
         // calcul somme déjà utilisée ce jour sur toutes les catégories (dans data structure) sauf cette catégorie courante
   const used = totalsByDay?.[dayKey] || 0;
         const currentVal = data[category.id]?.[dayKey];

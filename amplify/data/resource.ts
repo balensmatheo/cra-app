@@ -44,7 +44,10 @@ const schema = a.schema({
     active: a.boolean().default(true), // boolean accepte default
   entries: a.hasMany('CraEntry','categoryId'), // back-reference pour belongsTo category
   }).authorization(allow => [
-    allow.authenticated().to(['read']),
+    // Autoriser tous les utilisateurs authentifiés à LIRE et CRÉER des catégories
+    // (utile pour gérer plusieurs lignes avec le même libellé côté utilisateur)
+    allow.authenticated().to(['read','create']),
+    // Les admins gardent les droits complets
     allow.group('ADMINS').to(['create','read','update','delete'])
   ]),
 
@@ -59,11 +62,22 @@ const schema = a.schema({
     allow.group('ADMINS').to(['create','read','update','delete'])
   ]),
 
+  // --- Verrouillage mensuel global (bloque la saisie pour un mois) ---
+  MonthLock: a.model({
+    month: a.string().required(), // 'YYYY-MM'
+    locked: a.boolean().default(true),
+  }).authorization(allow => [
+    allow.authenticated().to(['read']), // tout le monde peut lire l'état du mois
+    allow.group('ADMINS').to(['create','read','update','delete']) // seuls les admins modifient
+  ]),
+
   // --- CRA (par mois) ---
   Cra: a.model({
     month: a.string().required(), // 'YYYY-MM'
     status: a.enum(['draft','saved','validated','closed']), // default géré applicativement
   isSubmitted: a.boolean().default(false),
+  // Propriétaire du CRA (sub Cognito)
+  owner: a.string().required(),
     entries: a.hasMany('CraEntry', 'craId'),
   }).authorization(allow => [
     allow.authenticated().to(['read']), // lecture globale
@@ -84,6 +98,13 @@ const schema = a.schema({
   category: a.belongsTo('Category','categoryId'),
     value: a.float().required(), // contrainte 0..1 à appliquer en UI / validations back
     comment: a.string(),
+  // Source metadata for automated syncs (leave, seminar, etc.)
+  // Allows selective revocation and auditing of injected entries
+  sourceType: a.string(), // e.g., 'leave' | 'seminar' | 'special' | 'manual'
+  sourceId: a.string(),   // id of the originating entity (e.g., LeaveRequest.id)
+  sourceNote: a.string(), // snapshot of the original note/comment at the time of injection
+  // Propriétaire de l'entrée (sub Cognito du CRA cible). Optionnel côté modèle, utile pour audit.
+  owner: a.string(),
   }).authorization(allow => [
     allow.authenticated().to(['read']),
     allow.owner(),
@@ -91,6 +112,52 @@ const schema = a.schema({
   ]),
 
   // (Legacy model `CRA` supprimé après migration complète.)
+
+  // --- Demandes de congés ---
+  LeaveRequest: a.model({
+    startDate: a.string().required(), // 'YYYY-MM-DD'
+    endDate: a.string().required(),   // 'YYYY-MM-DD'
+  status: a.enum(['pending','approuvee','refusee']),
+  // Type d'absence: congé, congé maladie, temps universitaire
+  absenceType: a.enum(['conge','maladie','universitaire']),
+    reason: a.string(),
+  adminNote: a.string(), // message de l'admin communiqué à l'utilisateur
+  userRead: a.boolean().default(false),   // notification lue par l'utilisateur
+  userHidden: a.boolean().default(false), // masquée de l'inbox utilisateur
+  // Pièce jointe (stockée via Amplify Storage)
+  attachmentKey: a.string(),
+  // IdentityId du propriétaire du fichier (requis pour lire un objet protected d'un autre utilisateur)
+  attachmentIdentityId: a.string(),
+  }).authorization(allow => [
+    // Tous les utilisateurs peuvent lire les congés (pour le calendrier)
+    allow.authenticated().to(['read']),
+    // Chaque utilisateur gère ses propres demandes
+    allow.owner().to(['create','update','delete']),
+    // Les admins ont tous les droits
+    allow.group('ADMINS').to(['create','read','update','delete'])
+  ]),
+
+  // --- Invitations de séminaire ---
+  SeminarInvite: a.model({
+    startDate: a.string().required(), // 'YYYY-MM-DD'
+    endDate: a.string().required(),   // 'YYYY-MM-DD'
+    title: a.string(),                // ex: 'Séminaire'
+    message: a.string(),              // message optionnel
+    location: a.string(),             // Lieu du séminaire
+    activities: a.string(),           // Description des activités
+    details: a.string(),              // Détails supplémentaires
+    refuseReason: a.string(),         // Justification si refusé
+    imageUrl: a.string(),             // URL de l'image de couverture
+    status: a.enum(['pending','accepted','refused']),
+    userRead: a.boolean().default(false),
+    userHidden: a.boolean().default(false),
+    owner: a.string(),                // Propriétaire de l'invitation (sub de l'utilisateur cible)
+  }).authorization(allow => [
+  // L'utilisateur (propriétaire) peut lire/mettre à jour ses propres invitations, les admins ont tous les droits.
+  allow.owner().to(['read','update']),
+  allow.group('USERS').to(['read']), // permettre aux utilisateurs de lister les invités (lecture seule)
+  allow.group('ADMINS').to(['create','read','update','delete'])
+  ]),
 
   // --- Admin custom operations (per Amplify docs) ---
   listUsers: a

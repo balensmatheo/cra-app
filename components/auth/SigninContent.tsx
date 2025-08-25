@@ -51,7 +51,7 @@ export default function SigninContent({ searchParams }: SigninContentProps) {
 
   if (checkingUser) {
     return (
-      <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8f9fa' }}>
+  <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'background.default' }}>
         <CircularProgress size={48} sx={{ color: '#894991' }} />
       </Box>
     );

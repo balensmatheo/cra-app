@@ -115,7 +115,7 @@ export default function ConfirmContent({ searchParams }: ConfirmContentProps) {
         variant="contained"
         onClick={handleConfirm}
         sx={{
-          background: '#894991',
+          backgroundColor: 'primary.main',
           '&:hover': { background: '#6a3a7a' },
           fontWeight: 600,
           textTransform: 'none',

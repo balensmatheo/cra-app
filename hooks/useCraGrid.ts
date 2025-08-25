@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '@/amplify/data/resource';
 import { useCraEntries } from './useCraEntries';
-import { CATEGORY_OPTIONS } from '@/constants/ui';
 import { type SectionKey } from '@/constants/categories';
 
 const client = generateClient<Schema>();
@@ -19,6 +18,7 @@ type Row = {
 interface UseCraGridResult {
   categories: Record<SectionKey, { id: number; label: string }[]>;
   data: Record<SectionKey, { [rowId: number]: Record<string, string | undefined> & { comment?: string } }>;
+  categoryOptions: Record<SectionKey, string[]>;
   addCategory: (section: SectionKey) => void;
   deleteCategory: (section: SectionKey, rowId: number) => void;
   updateCategory: (section: SectionKey, rowId: number, label: string) => Promise<void>;
@@ -54,7 +54,9 @@ export function useCraGrid(month: string, targetSub?: string | null, editMode?: 
   const { isSaving } = cra as any;
 
   const [categoriesLoaded, setCategoriesLoaded] = useState(false);
-  const [categoryMap, setCategoryMap] = useState<Record<string, Schema['Category']['type']>>({});
+  // Keep maps by label and by id to resolve categories reliably
+  const [categoryByLabel, setCategoryByLabel] = useState<Record<string, Schema['Category']['type']>>({});
+  const [categoryById, setCategoryById] = useState<Record<string, Schema['Category']['type']>>({});
   const [rows, setRows] = useState<Row[]>([]);
   const nextRowIdRef = useRef(1);
   // Draft values for rows without category yet selected (rowId -> { date: value })
@@ -68,36 +70,52 @@ export function useCraGrid(month: string, targetSub?: string | null, editMode?: 
 
   // Signature supprimée pour éviter les reconstructions excessives des lignes lors de chaque frappe.
 
+  // Centralized loader to (re)fetch categories
+  const loadCategories = useCallback(async () => {
+    try {
+      const { data: existing } = await client.models.Category.list({});
+      const byLabel: Record<string, Schema['Category']['type']> = {};
+      const byId: Record<string, Schema['Category']['type']> = {};
+      (existing || []).forEach(c => { byLabel[c.label] = c; byId[c.id] = c; });
+      setCategoryByLabel(byLabel);
+      setCategoryById(byId);
+      setCategoriesLoaded(true);
+    } catch {
+      setCategoriesLoaded(true);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      const { data: existing } = await client.models.Category.list({});
-      const map: Record<string, Schema['Category']['type']> = {};
-  (existing || []).forEach(c => { map[c.label] = c; });
-      if (!cancelled) {
-        setCategoryMap(map);
-        setCategoriesLoaded(true);
-      }
-    })().catch(() => setCategoriesLoaded(true));
+    (async () => { if (!cancelled) await loadCategories(); })();
     return () => { cancelled = true; };
-  }, []);
+  }, [loadCategories]);
+
+  // Refresh categories when CRA entries are updated elsewhere (e.g., leave approval created a new category)
+  useEffect(() => {
+    const onEntries = () => { loadCategories(); };
+    if (typeof window !== 'undefined') { window.addEventListener('cra:entries-updated', onEntries as any); }
+    return () => { if (typeof window !== 'undefined') { window.removeEventListener('cra:entries-updated', onEntries as any); } };
+  }, [loadCategories]);
 
   // Merge rows from existing saved entries continuously so data appears without re-selecting categories
   useEffect(() => {
     if (!categoriesLoaded || entriesLoading) return;
-    // Expected mapping by label to force coherent sections regardless of stale backend kind
-    const expectedKindByLabel: Record<string, 'facturee' | 'non_facturee' | 'autre'> = {} as any;
-    (CATEGORY_OPTIONS.facturees || []).forEach(l => { expectedKindByLabel[l] = 'facturee'; });
-    (CATEGORY_OPTIONS.non_facturees || []).forEach(l => { expectedKindByLabel[l] = 'non_facturee'; });
-    (CATEGORY_OPTIONS.autres || []).forEach(l => { expectedKindByLabel[l] = 'autre'; });
     const catIds = new Set<string>();
     entries.forEach(e => { const cid = (e as any).categoryId as string | undefined; if (cid) catIds.add(cid); });
     const needed: Row[] = [];
     catIds.forEach(categoryId => {
-      const cat = Object.values(categoryMap).find(c => c.id === categoryId);
-      if (!cat) return;
-      const expected = expectedKindByLabel[(cat as any).label as string];
-      const kind = expected || ((cat as any).kind as any);
+      // Prefer id-based lookup to avoid missing categories created after initial load
+      const cat = categoryById[categoryId] || Object.values(categoryByLabel).find(c => c.id === categoryId);
+      if (!cat) {
+        // Fallback: if we don't have the category yet (race), still surface the row when it's a leave sync
+        const hasLeaveSource = entries.some(e => (e as any).categoryId === categoryId && (String((e as any).sourceType||'') === 'leave' || (typeof (e as any).comment === 'string' && (e as any).comment.includes('[CONGE]'))));
+        const label = hasLeaveSource ? 'Congé' : 'Catégorie';
+        const section: SectionKey = 'autres';
+        needed.push({ id: -1 as any, categoryId, label, section });
+        return;
+      }
+      const kind = ((cat as any).kind as any);
       const section: SectionKey = (kind === 'facturee' ? 'facturees' : kind === 'non_facturee' ? 'non_facturees' : 'autres');
       needed.push({ id: -1 as any, categoryId, label: cat.label, section });
     });
@@ -111,7 +129,7 @@ export function useCraGrid(month: string, targetSub?: string | null, editMode?: 
       if (toAdd.length === 0) return prev;
       return [...prev, ...toAdd];
     });
-  }, [categoriesLoaded, entriesLoading, entries, categoryMap]);
+  }, [categoriesLoaded, entriesLoading, entries, categoryById, categoryByLabel]);
 
   // Guarantee exactly one empty row per section if there are no saved rows; remove empty rows when saved rows exist
   useEffect(() => {
@@ -152,14 +170,34 @@ export function useCraGrid(month: string, targetSub?: string | null, editMode?: 
 
   // Remove auto-placeholder rows; only user-added rows plus rows from saved entries are shown.
 
-  const ensureCategory = useCallback(async (label: string, section: SectionKey) => {
+  const ensureCategory = useCallback(async (
+    label: string,
+    section: SectionKey,
+    opts?: { allowDuplicate?: boolean }
+  ) => {
     if (!label) return undefined;
-    // Conserver unicité: si existe déjà, réutiliser la catégorie existante (pas de renommage sautant)
-    if (categoryMap[label]) return categoryMap[label];
-    const { data } = await client.models.Category.create({ label, kind: SECTION_KIND[section] });
-    if (data) setCategoryMap(prev => ({ ...prev, [label]: data }));
-    return data;
-  }, [categoryMap]);
+    // Par défaut, on réutilise la catégorie existante par label.
+    // Mais si allowDuplicate=true (ex: 2e ligne avec même label), on force la création d'une nouvelle catégorie.
+    if (!opts?.allowDuplicate && categoryByLabel[label]) return categoryByLabel[label];
+    try {
+      const { data } = await client.models.Category.create({ label, kind: SECTION_KIND[section] });
+      if (data) {
+        // Toujours indexer par id; pour le mapping par label, ne pas empêcher les doublons
+        // (la dernière créée écrasera la référence simple, ce qui est acceptable pour les cas non-dupliqués).
+        setCategoryById(prev => ({ ...prev, [data.id]: data }));
+        if (!opts?.allowDuplicate) {
+          setCategoryByLabel(prev => ({ ...prev, [label]: data }));
+        }
+      }
+      return data || undefined;
+    } catch (e) {
+      // En cas de permission refusée pour create:
+      //  - si allowDuplicate=false: réutiliser l'existante par label si dispo
+      //  - sinon: signaler échec via undefined
+      if (!opts?.allowDuplicate && categoryByLabel[label]) return categoryByLabel[label];
+      return undefined;
+    }
+  }, [categoryByLabel]);
 
   const addCategory = useCallback((section: SectionKey) => {
     setRows(prev => [...prev, { id: nextRowIdRef.current++, label: '', section }]);
@@ -211,7 +249,9 @@ export function useCraGrid(month: string, targetSub?: string | null, editMode?: 
   const updateCategory = useCallback(async (section: SectionKey, rowId: number, label: string) => {
     // Mettre à jour label immédiatement (optimiste)
     setRows(prev => prev.map(r => r.id === rowId ? { ...r, label, section } : r));
-    const category = await ensureCategory(label, section);
+  // Si une autre ligne possède déjà ce label (avec ou sans categoryId), on souhaite un doublon distinct
+  const duplicateExists = rows.some(r => r.id !== rowId && r.label === label);
+    const category = await ensureCategory(label, section, { allowDuplicate: duplicateExists });
     if (!category) return;
     // N'écraser que si categoryId absent (évite re-rendu brusque)
     setRows(prev => prev.map(r => r.id === rowId ? (r.categoryId ? r : { ...r, categoryId: category.id }) : r));
@@ -240,7 +280,7 @@ export function useCraGrid(month: string, targetSub?: string | null, editMode?: 
       }
       const clone = { ...prev }; delete clone[rowId]; return clone;
     });
-  }, [ensureCategory]);
+  }, [ensureCategory, rows]);
 
   const findEntry = useCallback((categoryId: string | undefined, date: string) => {
     if (!categoryId) return undefined;
@@ -252,15 +292,30 @@ export function useCraGrid(month: string, targetSub?: string | null, editMode?: 
     const row = rows.find(r => r.id === rowId);
     if (!row) return;
     if (!row.categoryId) {
-      // ligne sans catégorie => stocker dans draftValues (comme avant)
+      // Ligne sans catégorie: nettoyer les brouillons correctement.
+      // Si la valeur est vide, supprimer la clé de date; sinon, l'enregistrer.
       setDraftValues(prev => {
-        const clone = { ...prev };
-        clone[rowId] = { ...(clone[rowId] || {}), [date]: value };
+        const existing = prev[rowId] || {};
+        const nextForRow = { ...existing } as Record<string, string>;
+        if (value === '' || value == null) {
+          // remove empty draft for that date
+          if (nextForRow.hasOwnProperty(date)) delete nextForRow[date];
+        } else {
+          nextForRow[date] = value;
+        }
+        // If row draft becomes empty, drop the row entry entirely to avoid dirty flag
+        const hasAny = Object.keys(nextForRow).length > 0;
+        const clone = { ...prev } as Record<number, Record<string,string>>;
+        if (hasAny) {
+          clone[rowId] = nextForRow;
+        } else {
+          if (clone.hasOwnProperty(rowId)) delete clone[rowId];
+        }
         return clone;
       });
       return;
     }
-    if (value === '') {
+  if (value === '') {
       // Clearing a cell: schedule deletion and remove any pending value for this date
       setPendingValues(prev => {
         const clone = { ...prev };
@@ -277,7 +332,9 @@ export function useCraGrid(month: string, targetSub?: string | null, editMode?: 
       });
       return;
     }
-    const numeric = value ? parseFloat(value) : 0;
+  // Normalize French decimal separator (comma) to dot before parsing
+  const normalized = (value || '').replace(/\s/g, '').replace(',', '.');
+  const numeric = normalized ? parseFloat(normalized) : 0;
     setPendingValues(prev => {
       const clone = { ...prev };
       clone[row.categoryId!] = { ...(clone[row.categoryId!] || {}), [date]: isNaN(numeric) ? 0 : numeric };
@@ -298,8 +355,17 @@ export function useCraGrid(month: string, targetSub?: string | null, editMode?: 
     const row = rows.find(r => r.id === rowId);
     if (!row) return;
     if (!row.categoryId) {
-      setDraftComments(prev => ({ ...prev, [rowId]: comment }));
-      setRows(prev => prev.map(r => r.id === rowId ? { ...r, comment } : r));
+      // For unsaved rows, avoid keeping empty comments as drafts
+      setDraftComments(prev => {
+        const clone = { ...prev } as Record<number, string>;
+        if (comment && comment.trim().length > 0) {
+          clone[rowId] = comment;
+        } else {
+          if (clone.hasOwnProperty(rowId)) delete clone[rowId];
+        }
+        return clone;
+      });
+      setRows(prev => prev.map(r => r.id === rowId ? { ...r, comment: comment } : r));
       return;
     }
     setPendingComments(prev => ({ ...prev, [row.categoryId!]: comment }));
@@ -309,8 +375,19 @@ export function useCraGrid(month: string, targetSub?: string | null, editMode?: 
   const grid = useMemo(() => {
     const categoriesBySection: UseCraGridResult['categories'] = { facturees: [], non_facturees: [], autres: [] } as any;
     const dataBySection: UseCraGridResult['data'] = { facturees: {}, non_facturees: {}, autres: {} } as any;
+    const optionsBySection: UseCraGridResult['categoryOptions'] = { facturees: [], non_facturees: [], autres: [] } as any;
     const pendingMatrix: UseCraGridResult['pendingMatrix'] = { facturees: {}, non_facturees: {}, autres: {} } as any;
     const pendingCommentsBySection: UseCraGridResult['pendingComments'] = { facturees: {}, non_facturees: {}, autres: {} } as any;
+    // Build options list from active backend categories per kind
+    Object.values(categoryById).forEach((c) => {
+      if ((c as any).active === false) return;
+      const kind = (c as any).kind as 'facturee'|'non_facturee'|'autre'|undefined;
+      const section: SectionKey = kind === 'facturee' ? 'facturees' : kind === 'non_facturee' ? 'non_facturees' : 'autres';
+      if (!optionsBySection[section].includes(c.label)) optionsBySection[section].push(c.label);
+    });
+    // Preserve sorting by label for nicer UX
+    (Object.keys(optionsBySection) as SectionKey[]).forEach(k => { optionsBySection[k] = optionsBySection[k].sort((a,b) => a.localeCompare(b)); });
+
     rows.forEach(r => {
       categoriesBySection[r.section].push({ id: r.id, label: r.label });
       const rowData: Record<string, string | undefined> & { comment?: string } = { comment: r.comment } as any;
@@ -363,8 +440,8 @@ export function useCraGrid(month: string, targetSub?: string | null, editMode?: 
       }
       dataBySection[r.section][r.id] = rowData;
     });
-    return { categories: categoriesBySection, data: dataBySection, pendingMatrix, pendingComments: pendingCommentsBySection };
-  }, [rows, entries, draftValues, draftComments, pendingValues, pendingComments]);
+    return { categories: categoriesBySection, data: dataBySection, categoryOptions: optionsBySection, pendingMatrix, pendingComments: pendingCommentsBySection };
+  }, [rows, entries, draftValues, draftComments, pendingValues, pendingComments, categoryById]);
 
   // Flush des changements en attente vers les entrées (persistence)
   const flushPending = useCallback(async () => {
@@ -387,19 +464,82 @@ export function useCraGrid(month: string, targetSub?: string | null, editMode?: 
   }, [pendingValues, pendingComments, entries, updateEntry]);
 
   const saveDraft = useCallback(async () => {
-    // Immediately reflect saving state in header by kicking off batch first
-    await persistBatch(pendingValues, pendingComments, pendingDeletes);
-    // Reset local pending now that backend has newest state
+    // 1) Promote draft values/comments for rows without category into real categories when label is provided
+    //    If a row has values/comments but no label, block save to avoid data loss on reload.
+    const nextPendingValues: Record<string, Record<string, number>> = { ...pendingValues };
+    const nextPendingComments: Record<string, string> = { ...pendingComments };
+    let unresolvedRows = 0;
+    // Iterate rows to find unsaved rows with draft content
+    for (const r of rows) {
+      if (r.categoryId) continue;
+      const dv = draftValues[r.id];
+      const dc = draftComments[r.id];
+      if (!dv && !(dc && dc.trim())) continue; // nothing to migrate
+      if (!r.label || r.label.trim().length === 0) {
+        unresolvedRows++;
+        continue;
+      }
+      // Ensure category exists then migrate drafts into pending
+      try {
+  // Si une autre ligne a déjà ce label (avec ou sans categoryId), créer un doublon distinct
+  const duplicateExists = rows.some(x => x.id !== r.id && x.label === r.label);
+        const cat = await ensureCategory(r.label, r.section, { allowDuplicate: duplicateExists });
+        if (cat && cat.id) {
+          // Attach categoryId to the row locally so UI remains consistent
+          setRows(prev => prev.map(x => x.id === r.id ? { ...x, categoryId: cat.id } as any : x));
+          // Migrate values
+      if (dv) {
+            Object.entries(dv).forEach(([date, val]) => {
+        // Normalize comma decimals
+        const normalized = (val || '').replace(/\s/g, '').replace(',', '.');
+        const numeric = normalized ? parseFloat(normalized) : 0;
+              if (!Number.isNaN(numeric)) {
+                nextPendingValues[cat.id!] = nextPendingValues[cat.id!] || {};
+                nextPendingValues[cat.id!][date] = numeric;
+              }
+            });
+          }
+          // Migrate comment
+          if (dc && dc.trim()) {
+            nextPendingComments[cat.id!] = dc;
+          }
+          // Clear drafts for this row now that they are migrated
+          setDraftValues(prev => { const c = { ...prev }; delete c[r.id]; return c; });
+          setDraftComments(prev => { const c = { ...prev }; delete c[r.id]; return c; });
+        } else {
+          // Catégorie non disponible (ex: droit insuffisant). Marquer comme non résolu.
+          unresolvedRows++;
+        }
+      } catch {
+        // En cas d'erreur, ne pas dropper les brouillons ; marquer non résolu pour afficher une erreur à l'utilisateur.
+        unresolvedRows++;
+      }
+    }
+    if (unresolvedRows > 0) {
+      throw new Error('Certaines lignes ont des valeurs sans catégorie. Sélectionnez une catégorie avant d\'enregistrer.');
+    }
+
+    // 2) Persist all pending (including migrated) in one batch
+    await persistBatch(nextPendingValues, nextPendingComments, pendingDeletes);
+
+    // 3) Reset local pending now that backend has newest state
     setPendingValues({});
     setPendingComments({});
     setPendingDeletes({});
-    // Only update CRA status to 'saved' without re-persisting (avoid double-save/delete race)
-    return baseSaveDraft({ doPersist: false });
-  }, [persistBatch, pendingValues, pendingComments, pendingDeletes, baseSaveDraft]);
+    // Drop any remaining drafts (now migrated)
+    setDraftValues({});
+    setDraftComments({});
+    // 4) Only update CRA status to 'saved' without re-persisting (avoid double-save/delete race)
+    await baseSaveDraft({ doPersist: false });
+    // 5) Force a quick refresh so saved signature and current entries are aligned immediately
+    try { if (typeof window !== 'undefined') { window.dispatchEvent(new Event('cra:entries-updated')); } } catch { /* ignore */ }
+    return;
+  }, [rows, draftValues, draftComments, pendingValues, pendingComments, pendingDeletes, ensureCategory, persistBatch, baseSaveDraft]);
 
   return {
     categories: grid.categories,
     data: grid.data,
+  categoryOptions: grid.categoryOptions,
     addCategory,
     deleteCategory,
     updateCategory,

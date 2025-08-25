@@ -115,8 +115,13 @@ export default function ActivityTable({
 
   // Memoize les en-têtes de colonnes pour éviter les re-rendus
   const dayHeaders = useMemo(() => 
-    days.map((d) => (
-      <TableCell key={d.toISOString().slice(0, 10)} align="center" sx={{ 
+    days.map((d) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const key = `${y}-${m}-${dd}`;
+      return (
+      <TableCell key={key} align="center" sx={{ 
         px: 0, 
         width: '48px', 
         minWidth: '48px',
@@ -134,7 +139,7 @@ export default function ActivityTable({
           <span style={{ fontSize: 9, color: '#6c757d' }}>{d.toLocaleDateString('fr-FR', { weekday: 'narrow' })}</span>
         </div>
       </TableCell>
-    )), [days]);
+    )}), [days]);
 
   // Memoize les lignes de données
   const tableRows = useMemo(() => 

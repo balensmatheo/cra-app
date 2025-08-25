@@ -98,8 +98,8 @@ const CRAHeader: React.FC<CRAHeaderProps> = ({
       gap: 1.5,
       p: 1.5,
       borderRadius: 2,
-      background: '#faf8fc',
-      border: '1px solid #efe7f3'
+  background: '#faf8fc',
+  border: '1px solid #efe7f3'
     }}>
       <Box sx={{
         display: 'flex',
@@ -140,19 +140,18 @@ const CRAHeader: React.FC<CRAHeaderProps> = ({
                 sx={{ width: { xs: '100%', sm: 180 } }}
                 size="small"
                 InputLabelProps={{ shrink: true }}
-                disabled={readOnly}
               />
             </Box>
           );
         })()}
         {status && (
-          <Box sx={{
+            <Box sx={{
             px: 1.25,
             py: 0.5,
             borderRadius: 999,
             border: `1px solid ${statusColorMap[status] ?? '#9e9e9e'}`,
-            backgroundColor: `${(statusColorMap[status] ?? '#9e9e9e')}14`,
-            color: statusColorMap[status] ?? '#424242',
+              backgroundColor: `${(statusColorMap[status] ?? '#9e9e9e')}14`,
+              color: statusColorMap[status] ?? '#424242',
             fontSize: '0.7rem',
             fontWeight: 800,
             textTransform: 'uppercase',
@@ -162,30 +161,30 @@ const CRAHeader: React.FC<CRAHeaderProps> = ({
           </Box>
         )}
         {readOnly && (
-          <Box sx={{
+            <Box sx={{
             px: 1.5,
             py: 0.75,
             borderRadius: 2,
-            backgroundColor: '#eeeeee',
-            border: '1px solid #cccccc',
+              backgroundColor: '#eeeeee',
+              border: '1px solid #cccccc',
             fontSize: '0.7rem',
             fontWeight: 600,
-            color: '#555',
+              color: '#555',
             textTransform: 'uppercase'
           }}>
             Lecture seule
           </Box>
         )}
         {!readOnly && editingOther && (
-          <Box sx={{
+            <Box sx={{
             px: 1.5,
             py: 0.75,
             borderRadius: 2,
-            backgroundColor: '#f4e9f6',
-            border: '1px solid #e7dff0',
+              backgroundColor: '#f4e9f6',
+              border: '1px solid #e7dff0',
             fontSize: '0.7rem',
             fontWeight: 700,
-            color: '#6a3a7a',
+              color: '#6a3a7a',
             textTransform: 'uppercase'
           }}>
             Édition d’un autre utilisateur
@@ -201,14 +200,14 @@ const CRAHeader: React.FC<CRAHeaderProps> = ({
       }}>
   {/* Badge validation retiré (affiché seulement lors de la soumission finale) */}
         {lastSavedLabel && (
-          <Box sx={{
+            <Box sx={{
             fontSize: '0.6rem',
-            color: '#666',
+              color: '#666',
             px: 1,
             py: 0.5,
             borderRadius: 1,
-            background: '#f5f5f5',
-            border: '1px solid #e0e0e0'
+              background: '#f5f5f5',
+              border: '1px solid #e0e0e0'
           }}>
             Sauvé à {lastSavedLabel}
           </Box>
@@ -275,7 +274,6 @@ const CRAHeader: React.FC<CRAHeaderProps> = ({
             </IconButton>
           </Tooltip>
         )}
-        {status !== 'validated' && (
         <Button
           variant="outlined"
           startIcon={<DescriptionIcon />}
@@ -294,7 +292,6 @@ const CRAHeader: React.FC<CRAHeaderProps> = ({
             Exporter
           </Box>
         </Button>
-        )}
         <Button
           variant="outlined"
           startIcon={<FullscreenIcon />}
@@ -311,7 +308,7 @@ const CRAHeader: React.FC<CRAHeaderProps> = ({
             Plein écran
           </Box>
         </Button>
-        {status === 'validated' && !!onReopen && (
+  {status === 'validated' && !!onReopen && (
           <Button
             variant="outlined"
             startIcon={reopening ? <CircularProgress size={16} /> : <EditIcon />}

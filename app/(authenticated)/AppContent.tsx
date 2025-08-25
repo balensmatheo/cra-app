@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { getCurrentUser, fetchAuthSession } from 'aws-amplify/auth';
+import { useRouter } from 'next/navigation';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '@/amplify/data/resource';
 import Box from '@mui/material/Box';
@@ -13,14 +14,15 @@ import ActivityTable from '@/components/ActivityTable';
 import TopKPI from '@/components/TopKPI';
 import { useCRA } from '@/context/CRAContext';
 import { useCraGrid } from '@/hooks/useCraGrid';
-import { CATEGORY_OPTIONS, SECTION_LABELS } from '@/constants/ui';
+import { SECTION_LABELS } from '@/constants/ui';
 import { type SectionKey } from '@/constants/categories';
 import { exportExcel } from '@/utils/exportExcel';
 import { getBusinessDaysCount } from '@/utils/businessDays';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 
 export default function AppContent() {
-  const { selectedMonth, setMonthString, isFullscreen, setIsFullscreen, resolvedTargetSub, currentUserSub, editMode } = useCRA();
+  const { selectedMonth, setMonthString, isFullscreen, setIsFullscreen, resolvedTargetSub, currentUserSub, editMode, updateMonthStatusLocal } = useCRA();
+  const router = useRouter();
   const dataClient = useMemo(() => generateClient<Schema>(), []);
   const fullRef = useRef<HTMLDivElement | null>(null);
   const ownerIdRef = useRef<string | null>(null);
@@ -28,6 +30,7 @@ export default function AppContent() {
   const {
     categories,
     data,
+  categoryOptions,
     updateCell,
     updateComment,
     updateCategory,
@@ -53,6 +56,9 @@ export default function AppContent() {
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' as 'success'|'error'|'info' });
   const [userFamilyName, setUserFamilyName] = useState('');
   const [userGivenName, setUserGivenName] = useState('');
+  // Store self token names separately to avoid flashing them when viewing another user's CRA
+  const [selfFamilyName, setSelfFamilyName] = useState('');
+  const [selfGivenName, setSelfGivenName] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [closing, setClosing] = useState(false);
@@ -91,12 +97,21 @@ export default function AppContent() {
           const payload: any = tokens?.idToken?.payload ?? {};
           const given = payload?.given_name || payload?.givenName || '';
           const family = payload?.family_name || payload?.familyName || '';
-          if (typeof given === 'string') setUserGivenName(given);
-          if (typeof family === 'string') setUserFamilyName(family);
+          if (typeof given === 'string') setSelfGivenName(given);
+          if (typeof family === 'string') setSelfFamilyName(family);
         } catch {}
       } catch {}
     })();
   }, []);
+
+  // Reflect self token names only when viewing own CRA
+  useEffect(() => {
+    const isSelf = !!(resolvedTargetSub && currentUserSub && resolvedTargetSub === currentUserSub);
+    if (isSelf) {
+      setUserGivenName(selfGivenName || '');
+      setUserFamilyName(selfFamilyName || '');
+    }
+  }, [resolvedTargetSub, currentUserSub, selfGivenName, selfFamilyName]);
 
   // When viewing another user's CRA, fetch their profile (name) via admin getUser
   useEffect(() => {
@@ -106,6 +121,9 @@ export default function AppContent() {
       if (!target) return;
       // If target is self, keep current token names
       if (currentUserSub && target === currentUserSub) return;
+      // Clear display names immediately to avoid flashing current user's name
+      setUserGivenName('');
+      setUserFamilyName('');
       try {
         const { data, errors } = await dataClient.queries.getUser({ sub: target });
         if (errors) throw new Error(errors[0]?.message || 'getUser error');
@@ -134,14 +152,22 @@ export default function AppContent() {
     return arr;
   }, [selectedMonth]);
 
+  // Helper to format a Date as local YYYY-MM-DD (avoid UTC shifts)
+  const toLocalYMD = useCallback((d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+  }, []);
+
   const sectionTotals = useMemo(() => {
     const totals: Record<SectionKey, number> = { facturees: 0, non_facturees: 0, autres: 0 } as any;
-    (Object.keys(categories) as SectionKey[]).forEach(section => {
+  (Object.keys(categories) as SectionKey[]).forEach(section => {
       const rows = categories[section];
       rows.forEach(r => {
         const rowData = data[section][r.id] || {};
         const sum = days.reduce((acc, d) => {
-          const v = rowData[d.toISOString().slice(0,10)];
+      const v = rowData[toLocalYMD(d)];
           const n = v ? parseFloat(v) : 0;
           return acc + (isNaN(n) ? 0 : n);
         }, 0);
@@ -149,7 +175,7 @@ export default function AppContent() {
       });
     });
     return totals;
-  }, [categories, data, days]);
+  }, [categories, data, days, toLocalYMD]);
 
   const businessDaysInMonth = useMemo(() => {
     const [y, m] = selectedMonth.split('-').map(Number);
@@ -159,7 +185,7 @@ export default function AppContent() {
   const invalidDays = useMemo(() => {
     const set = new Set<string>();
     days.forEach((d) => {
-      const dayKey = d.toISOString().slice(0,10);
+    const dayKey = toLocalYMD(d);
       let sum = 0;
       (Object.keys(data) as SectionKey[]).forEach((section) => {
         const rows = data[section] as Record<number, Record<string, string | undefined>>;
@@ -172,12 +198,12 @@ export default function AppContent() {
       if (sum > 1.0001) set.add(dayKey);
     });
     return set;
-  }, [data, days]);
+  }, [data, days, toLocalYMD]);
 
   const totalsByDay = useMemo(() => {
     const totals: Record<string, number> = {};
     days.forEach((d) => {
-      const dayKey = d.toISOString().slice(0,10);
+    const dayKey = toLocalYMD(d);
       let sum = 0;
       (Object.keys(data) as SectionKey[]).forEach((section) => {
         const rows = data[section] as Record<number, Record<string, string | undefined>>;
@@ -190,12 +216,17 @@ export default function AppContent() {
       totals[dayKey] = sum;
     });
     return totals;
-  }, [data, days]);
+  }, [data, days, toLocalYMD]);
 
   const handleMonthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     if (/^\d{4}-\d{2}$/.test(value)) {
       setMonthString(value);
+      // Keep user/edit context in the URL for consistency
+      const isMe = !resolvedTargetSub || (currentUserSub && resolvedTargetSub === currentUserSub);
+      const userParam = isMe ? 'me' : resolvedTargetSub;
+      const editParam = editMode ? '&edit=1' : '';
+      try { router.push(`/cra/${value}?user=${userParam}${editParam}`); } catch {}
     }
   };
 
@@ -246,7 +277,7 @@ export default function AppContent() {
   const getRowTotal = (section: SectionKey, rowId: number) => {
     const rowData = data[section][rowId] || {};
     return days.reduce((acc, d) => {
-      const v = rowData[d.toISOString().slice(0,10)];
+  const v = rowData[toLocalYMD(d)];
       const n = v ? parseFloat(v) : 0;
       return acc + (isNaN(n) ? 0 : n);
     }, 0);
@@ -255,8 +286,13 @@ export default function AppContent() {
   const getSectionTotal = (section: SectionKey) => sectionTotals[section] || 0;
 
   const handleSave = async () => {
-    await saveDraft();
-    setSnackbar({ open: true, message: 'CRA enregistré', severity: 'success' });
+    try {
+      await saveDraft();
+      setSnackbar({ open: true, message: 'CRA enregistré', severity: 'success' });
+    } catch (e: any) {
+      const msg = e?.message || 'Erreur lors de l\'enregistrement. Vérifiez vos lignes.';
+      setSnackbar({ open: true, message: msg, severity: 'error' });
+    }
   };
 
   const { ok, errors } = computeValidation();
@@ -274,6 +310,10 @@ export default function AppContent() {
     setSubmitting(true);
     const success = await validateCra();
     setSnackbar({ open: true, message: success ? 'CRA validé' : 'Échec validation', severity: success ? 'success' : 'error' });
+    if (success) {
+      // Optimistic update so the drawer reflects the new state immediately
+      try { updateMonthStatusLocal(selectedMonth, 'validated'); } catch {}
+    }
     setSubmitting(false);
   };
 
@@ -295,6 +335,10 @@ export default function AppContent() {
     setReopening(true);
     const ok = await reopenCra();
     setSnackbar({ open: true, message: ok ? 'CRA ré-ouvert pour modification' : 'Impossible de ré-ouvrir ce CRA', severity: ok ? 'success' : 'error' });
+    if (ok) {
+      // Reflect status change in the drawer immediately
+      try { updateMonthStatusLocal(selectedMonth, 'saved'); } catch {}
+    }
     setReopening(false);
   };
 
@@ -305,7 +349,7 @@ export default function AppContent() {
     categories: categories[key],
     data: data[key] as any,
     totalsByDay,
-    categoryOptions: CATEGORY_OPTIONS[key],
+  categoryOptions: categoryOptions[key],
     onCategoryChange: (rowId: number, value: string) => updateCategory(key, rowId, value),
     onCellChange: (rowId: number, date: string, value: string) => updateCell(key, rowId, date, value),
     onAddCategory: () => addCategory(key),
@@ -322,12 +366,12 @@ export default function AppContent() {
   }));
 
   return (
-    <Box ref={fullRef}
+  <Box ref={fullRef}
       sx={{
         width: '100%',
         maxWidth: '100%',
         margin: isFullscreen ? 0 : '0 auto',
-        background: '#fff',
+  background: '#fff',
         borderRadius: isFullscreen ? 0 : { xs: 0, md: 2 },
         boxShadow: isFullscreen ? 'none' : { xs: 'none', md: '0 4px 24px rgba(0,0,0,0.08)' },
         p: isFullscreen ? 2 : { xs: 2, md: 4 },
@@ -389,7 +433,7 @@ export default function AppContent() {
           exporting={exporting}
           closing={closing}
           reopening={reopening}
-          onReopen={status === 'validated' && !readOnly ? handleReopen : undefined}
+          onReopen={status === 'validated' && !editingOther ? handleReopen : undefined}
         />
       )}
 
@@ -403,7 +447,7 @@ export default function AppContent() {
 
       <Snackbar
         open={snackbar.open}
-        autoHideDuration={4000}
+        autoHideDuration={5000}
         onClose={() => setSnackbar(prev => ({ ...prev, open: false }))}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >

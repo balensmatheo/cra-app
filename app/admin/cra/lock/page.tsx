@@ -11,7 +11,7 @@ const client = generateClient<Schema>();
 
 type MonthRow = { month: string; locked: boolean; lockId?: string };
 
-export default function AdminMonthLockMainPage() {
+export default function AdminMonthLockPage() {
   const { updateMonthLockedLocal } = useCRA();
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [year, setYear] = useState<number>(new Date().getFullYear());
@@ -20,8 +20,8 @@ export default function AdminMonthLockMainPage() {
   const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success'|'error'|'info' }>({ open:false, message:'', severity:'info' });
 
   const years = useMemo(() => {
-    const current = new Date().getFullYear();
-    return [current - 1, current, current + 1];
+    const curr = new Date().getFullYear();
+    return [curr - 1, curr, curr + 1];
   }, []);
 
   useEffect(() => {
@@ -36,16 +36,18 @@ export default function AdminMonthLockMainPage() {
 
   const load = async () => {
     setLoading(true);
-    const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
     try {
+      // Build all months of selected year
+      const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
+      // Fetch existing locks for the year
       const prefix = `${year}-`;
       const { data } = await client.models.MonthLock.list({ filter: { month: { beginsWith: prefix } } });
-      const map = new Map<string, { id: string; locked: boolean }>();
-      (data || []).forEach((m: any) => map.set(m.month, { id: m.id, locked: !!m.locked }));
-      setRows(months.map(m => ({ month: m, locked: map.get(m)?.locked || false, lockId: map.get(m)?.id })));
+      const lockMap = new Map<string, { id: string; locked: boolean }>();
+      (data || []).forEach((m: any) => lockMap.set(m.month, { id: m.id, locked: !!m.locked }));
+      const rows: MonthRow[] = months.map(m => ({ month: m, locked: lockMap.get(m)?.locked || false, lockId: lockMap.get(m)?.id }));
+      setRows(rows);
     } catch {
-      // Backend pas encore déployé pour MonthLock: montrer quand même les mois (ouverts)
-      setRows(months.map(m => ({ month: m, locked: false })));
+      setRows([]);
     } finally { setLoading(false); }
   };
 
@@ -54,16 +56,17 @@ export default function AdminMonthLockMainPage() {
   const toggleLock = async (row: MonthRow) => {
     try {
       if (row.lockId) {
+        // Update existing lock
         await client.models.MonthLock.update({ id: row.lockId, locked: !row.locked });
       } else if (!row.locked) {
+        // Create lock if toggling from unlocked -> locked
         await client.models.MonthLock.create({ month: row.month as any, locked: true as any });
       } else {
+        // Row says locked but no id (inconsistent), try creating unlocked state by ensuring no record or update after reload
         await client.models.MonthLock.create({ month: row.month as any, locked: false as any });
       }
       setSnackbar({ open: true, message: (!row.locked ? 'Mois verrouillé' : 'Mois déverrouillé'), severity: 'success' });
-  // Optimistic local update for the drawer/context
   updateMonthLockedLocal(row.month, !row.locked);
-  // Refresh the table state (non-blocking UX): reflect the change immediately
   setRows(prev => prev.map(r => r.month === row.month ? { ...r, locked: !row.locked } : r));
     } catch {
       setSnackbar({ open: true, message: 'Action impossible', severity: 'error' });

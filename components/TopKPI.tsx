@@ -18,7 +18,7 @@ const StatCard: React.FC<{ label: string; value: React.ReactNode; color?: string
       py: 1.5,
       borderRadius: 2,
       border: '1px solid #e9ecef',
-      background: '#ffffff',
+  backgroundColor: 'background.paper',
       boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
     }}
   >
