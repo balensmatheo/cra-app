@@ -87,7 +87,7 @@ export default function AdminHomePage() {
     },
     {
       title: 'Jours spéciaux',
-      description: 'Gérer fériés, séminaires, etc.',
+      description: 'Gestion des jours spéciaux',
       icon: <EventAvailableOutlinedIcon />,
       href: '/admin/special-days',
       color: '#d97706',

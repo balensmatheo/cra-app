@@ -98,59 +98,37 @@ export default function AdminDashboardPage() {
     setEndDate(e);
   }, []);
 
-  // Load categories and users
+  // Load categories and users (robust mapping of listUsers output)
   useEffect(() => {
     (async () => {
+      // Categories
       try {
         const { data: cats } = await client.models.Category.list({});
         const map: Record<string, { label: string; kind: any }> = {};
-        (cats || []).forEach((c: any) => {
-          map[c.id] = { label: c.label, kind: c.kind };
-        });
+        (cats || []).forEach((c: any) => { map[c.id] = { label: c.label, kind: c.kind }; });
         setCategories(map as any);
       } catch {}
+
+      // Users for filters
       try {
-        // Fetch application users from UserProfile (active)
-        const { data: profiles } = await client.models.UserProfile.list({});
-        const activeProfiles = (profiles || []).filter((p: any) => p.active !== false);
-        // Map Cognito users to get subs and emails
-        let cognitoUsers: any[] = [];
-        try {
-          const { data, errors } = await client.queries.listUsers({ search: "" } as any);
-          if (!errors) {
-            const payload = typeof data === "string" ? JSON.parse(data as any) : (data as any);
-            cognitoUsers = payload?.users || [];
-          }
-        } catch { /* ignore */ }
-        const byEmail: Record<string, any> = {};
-        cognitoUsers.forEach((u: any) => {
-          const email = (u?.Attributes || []).find((a: any) => a.Name === "email")?.Value;
-          if (email) byEmail[email.toLowerCase()] = u;
-        });
-        // Join profiles with cognito (prefer profile displayName & groups)
-        const joined: { sub: string; name: string; groups: string[] }[] = [];
-        activeProfiles.forEach((p: any) => {
-          const cu = byEmail[String(p.email || '').toLowerCase()];
-          if (cu && cu.Username) {
-            joined.push({ sub: cu.Username, name: p.displayName || cu.Username, groups: Array.isArray(p.groups) ? p.groups : [] });
-          }
-        });
-        // Fallback: if no profiles exist, fall back to Cognito list
-        if (joined.length === 0 && cognitoUsers.length > 0) {
-          const list: { sub: string; name: string; groups: string[] }[] = cognitoUsers.map((u: any) => ({
-            sub: u.Username,
-            name: `${u?.Attributes?.find((a: any) => a.Name === "given_name")?.Value || ""} ${u?.Attributes?.find((a: any) => a.Name === "family_name")?.Value || ""}`.trim() || (u?.Attributes?.find((a: any) => a.Name === "email")?.Value || u.Username),
-            groups: (u.Groups || []).map((g: any) => g.GroupName),
-          }));
-          setUsers(list);
-          const teamNames = Array.from(new Set(list.flatMap((u) => u.groups || []).filter((g) => g !== "USERS" && g !== "ADMINS"))).sort();
-          setTeams(teamNames);
-        } else {
-          setUsers(joined);
-          const teamNames = Array.from(new Set(joined.flatMap((u) => u.groups || []).filter((g) => g !== "USERS" && g !== "ADMINS"))).sort();
-          setTeams(teamNames);
-        }
-      } catch { /* ignore */ }
+        const { data, errors } = await client.queries.listUsers({} as any);
+        if (errors) throw new Error(errors[0]?.message || 'listUsers error');
+        const payload = typeof data === 'string' ? JSON.parse(data as any) : (data as any);
+        const pool: Array<{ username: string; email?: string; given_name?: string; family_name?: string; groups?: string[] }> = (payload?.users || []) as any[];
+        const list = pool.map(u => ({
+          sub: u.username,
+          name: `${u.given_name || ''} ${u.family_name || ''}`.trim() || (u.email || u.username),
+          groups: Array.isArray(u.groups) ? u.groups : [],
+        }));
+        // Keep only non-system groups for teams and sort names
+        const teamNames = Array.from(new Set(list.flatMap(u => u.groups).filter(g => g && g !== 'USERS' && g !== 'ADMINS'))).sort();
+        setTeams(teamNames);
+        setUsers(list.sort((a, b) => a.name.localeCompare(b.name)));
+      } catch {
+        // If listing users fails, leave filters empty; the dashboard still works without user filter
+        setUsers([]);
+        setTeams([]);
+      }
     })();
   }, []);
 
