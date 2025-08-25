@@ -4,6 +4,7 @@ import { fetchAuthSession } from 'aws-amplify/auth';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '@/amplify/data/resource';
 import { Box, Typography, TextField, Button, Table, TableHead, TableRow, TableCell, TableBody, Select, MenuItem, Snackbar, Alert, IconButton, Tooltip, Chip, Divider, CircularProgress, Dialog, DialogTitle, DialogActions, DialogContent, List, ListItem, ListItemText, ListItemIcon, Avatar, FormControl, InputLabel } from '@mui/material';
+import { getUrl } from 'aws-amplify/storage';
 import { useMemo } from 'react';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -31,6 +32,7 @@ export default function AdminSpecialDaysPage() {
   const [snackbar, setSnackbar] = useState<{open:boolean;message:string;severity:'success'|'error'|'info'}>({open:false,message:'',severity:'info'});
   const [newRow, setNewRow] = useState<EditableSD>({ date: '', type: 'ferie', scope:'global' });
   const [users, setUsers] = useState<Array<{ username: string; given_name?: string; family_name?: string }>>([]);
+  const [avatarMap, setAvatarMap] = useState<Record<string, string>>({});
   const [usersLoading, setUsersLoading] = useState(false);
   const [tableLoading, setTableLoading] = useState(false);
   // Seminar creation dialog
@@ -121,6 +123,17 @@ export default function AdminSpecialDaysPage() {
           const payload = typeof data === 'string' ? JSON.parse(data as any) : (data as any);
           const list = (payload?.users || []) as any[];
           setUsers(list.map(u => ({ username: u.username, given_name: u.given_name, family_name: u.family_name })));
+          try {
+            const pairs = await Promise.all(list.map(async (u: any) => {
+              try {
+                const { url } = await getUrl({ key: `avatars/${u.username}.jpg`, options: { accessLevel: 'guest', expiresIn: 300 } });
+                return [u.username, url.toString()] as const;
+              } catch { return null; }
+            }));
+            const amap: Record<string, string> = {};
+            for (const p of pairs) if (p) amap[p[0]] = p[1];
+            setAvatarMap(amap);
+          } catch { /* ignore */ }
         }
       } catch {
         // ignore; selector will fallback
@@ -886,16 +899,21 @@ export default function AdminSpecialDaysPage() {
                 {responseDialog.responses.map((response, idx) => (
                   <ListItem key={idx} divider>
                     <ListItemIcon>
-                      <Avatar sx={{
-                        width: 32,
-                        height: 32,
-                        bgcolor: response.status === 'accepted' ? 'success.main' :
-                                response.status === 'refused' ? 'error.main' :
-                                'warning.main'
-                      }}>
-                        {response.status === 'accepted' ? <CheckCircleIcon fontSize="small" /> :
-                         response.status === 'refused' ? <CancelIcon fontSize="small" /> :
-                         <HourglassEmptyIcon fontSize="small" />}
+                      <Avatar
+                        src={avatarMap[response.userId]}
+                        sx={{
+                          width: 32,
+                          height: 32,
+                          bgcolor: response.status === 'accepted' ? 'success.main' :
+                                  response.status === 'refused' ? 'error.main' :
+                                  'warning.main'
+                        }}
+                      >
+                        {!avatarMap[response.userId] && (
+                          response.status === 'accepted' ? <CheckCircleIcon fontSize="small" /> :
+                          response.status === 'refused' ? <CancelIcon fontSize="small" /> :
+                          <HourglassEmptyIcon fontSize="small" />
+                        )}
                       </Avatar>
                     </ListItemIcon>
                     <ListItemText

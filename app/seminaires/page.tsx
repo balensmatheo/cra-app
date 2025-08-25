@@ -2,6 +2,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import type React from 'react';
 import { Box, Typography, Card, CardMedia, CardContent, Chip, Skeleton, Select, MenuItem, FormControl, InputLabel, Button, Grid, Tooltip, Stack, Snackbar, Alert, Dialog, DialogTitle, DialogContent, DialogActions, TextField, CircularProgress } from '@mui/material';
+import Link from 'next/link';
 import { generateClient } from 'aws-amplify/data';
 import type { Schema } from '@/amplify/data/resource';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
@@ -825,24 +826,9 @@ export default function SeminairesPage() {
                       </Typography>
                     )}
 
-                    {/* Details (expandable) */}
+                    {/* Short details preview (keep compact) */}
                     {sem.details && (
-                      <Typography
-                        variant="body2"
-                        sx={{
-                          mb: 2,
-                          color: '#666',
-                          ...(expandedDetails[groupKey]
-                            ? { display: 'block', overflow: 'visible' }
-                            : {
-                                display: '-webkit-box',
-                                WebkitLineClamp: 3,
-                                WebkitBoxOrient: 'vertical',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                              }),
-                        }}
-                      >
+                      <Typography variant="body2" sx={{ mb: 2, color: '#666', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {sem.details}
                       </Typography>
                     )}
@@ -964,17 +950,16 @@ export default function SeminairesPage() {
                           </Typography>
                         </Tooltip>
                       </Box>
-                      {/* Bottom-right: Voir plus/moins toggle aligned opposite the stats */}
-                      {sem.details && (
-                        <Button
-                          size="small"
-                          variant="text"
-                          onClick={() => setExpandedDetails(prev => ({ ...prev, [groupKey]: !prev[groupKey] }))}
-                          sx={{ textTransform: 'none', color: '#555' }}
-                        >
-                          {expandedDetails[groupKey] ? 'Voir moins' : 'Voir plus'}
-                        </Button>
-                      )}
+                      {/* Always show navigation to details page */}
+                      <Button
+                        size="small"
+                        variant="text"
+                        component={Link}
+                        href={`/seminaires/${encodeURIComponent(groupKey)}`}
+                        sx={{ textTransform: 'none', color: '#555' }}
+                      >
+                        Voir plus
+                      </Button>
                     </Box>
                   </CardContent>
                 </Card>

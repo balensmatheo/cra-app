@@ -33,6 +33,7 @@ import type { Schema } from '@/amplify/data/resource';
 import { generateClient } from 'aws-amplify/data';
 import Snackbar from '@mui/material/Snackbar';
 import Alert from '@mui/material/Alert';
+import { getUrl } from 'aws-amplify/storage';
 
 type PoolUser = {
   sub: string;
@@ -52,6 +53,7 @@ export default function SalariesPage() {
   const [meIsAdmin, setMeIsAdmin] = useState(false);
   const [meSub, setMeSub] = useState<string | null>(null);
   const [users, setUsers] = useState<PoolUser[]>([]);
+  const [avatarMap, setAvatarMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState('');
   const [mounted, setMounted] = useState(false);
@@ -112,6 +114,22 @@ export default function SalariesPage() {
         if (mounted) {
           setUsers(list);
         }
+        // Best-effort: resolve public avatars for these users
+        try {
+          const pairs = await Promise.all(list.map(async (u: PoolUser) => {
+            const candidates = [`avatars/${u.sub}.jpg`, `avatars/${u.email?.split('@')[0] || ''}.jpg`].filter(Boolean);
+            for (const key of candidates) {
+              try {
+                const { url } = await getUrl({ key, options: { accessLevel: 'guest', expiresIn: 300 } });
+                return [u.sub, url.toString()] as const;
+              } catch {}
+            }
+            return null;
+          }));
+          const amap: Record<string, string> = {};
+          for (const p of pairs) if (p) amap[p[0]] = p[1];
+          if (mounted && Object.keys(amap).length) setAvatarMap(prev => ({ ...prev, ...amap }));
+        } catch {/* ignore */}
       } catch (e) {
         console.error('[Salaries] listUsers failed:', e);
         // Fallback minimal: show only current user if we cannot list pool users
@@ -236,7 +254,7 @@ export default function SalariesPage() {
                     inputProps={{ 'aria-label': 'Sélectionner l\'utilisateur' }}
                   />
                 )}
-                <Avatar sx={{
+                <Avatar src={avatarMap[u.sub]} sx={{
                   bgcolor: 'transparent',
                   color: '#6a3a7a',
                   fontWeight: 700,

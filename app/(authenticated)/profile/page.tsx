@@ -1,6 +1,6 @@
 "use client";
 import React, { useEffect, useState } from 'react';
-import { fetchAuthSession } from 'aws-amplify/auth';
+import { fetchAuthSession, getCurrentUser } from 'aws-amplify/auth';
 import { getUrl, uploadData } from 'aws-amplify/storage';
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
@@ -13,6 +13,8 @@ export default function ProfilePage() {
   const [givenName, setGivenName] = useState('');
   const [familyName, setFamilyName] = useState('');
   const [group, setGroup] = useState('');
+  const [sub, setSub] = useState<string | null>(null);
+  const [username, setUsername] = useState<string | null>(null);
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined);
   const [uploading, setUploading] = useState(false);
   const [cropOpen, setCropOpen] = useState(false);
@@ -23,10 +25,15 @@ export default function ProfilePage() {
     (async () => {
       try {
   const { tokens } = await fetchAuthSession();
+        try {
+          const me = await getCurrentUser();
+          setUsername((me as any)?.userId || null);
+        } catch {}
         const payload: any = tokens?.idToken?.payload ?? {};
-        setEmail(payload?.email || '');
+  setEmail(payload?.email || '');
         setGivenName(payload?.given_name || payload?.givenName || '');
         setFamilyName(payload?.family_name || payload?.familyName || '');
+  setSub(payload?.sub || null);
         // Cognito groups usually come under 'cognito:groups'
   const rawGroups = (payload?.['cognito:groups'] ?? payload?.groups ?? payload?.group) as string | string[] | undefined;
   const groups = Array.isArray(rawGroups) ? rawGroups : (rawGroups ? [rawGroups] : []);
@@ -86,6 +93,15 @@ export default function ProfilePage() {
       await uploadData({ key, data: blob, options: { accessLevel: 'protected', contentType: 'image/jpeg' } }).result;
       const { url } = await getUrl({ key, options: { accessLevel: 'protected', expiresIn: 300 } });
       setAvatarUrl(url.toString());
+      // Also save a public copy for cross-user display (by Cognito username/sub)
+      // Write public copies addressed by username and by sub (compat)
+      const pubTargets = [username, sub].filter(Boolean) as string[];
+      for (const ident of pubTargets) {
+        const publicKey = `avatars/${ident}.jpg`;
+        try {
+          await uploadData({ key: publicKey, data: blob, options: { accessLevel: 'guest', contentType: 'image/jpeg' } }).result;
+        } catch { /* ignore */ }
+      }
     } catch (e) {
       console.error('Avatar upload failed', e);
     } finally {
